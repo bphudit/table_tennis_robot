@@ -1,77 +1,123 @@
 import cv2
-import pyrealsense2 as rs
 import numpy as np
-from src.intel import init_cam_color
-# Define pipeline for each camera
-pipeline_right = rs.pipeline()
-pipeline_left = rs.pipeline()
+import time
+from pypylon import pylon
+import threading
 
-# Configure both pipelines to connect to specific cameras
-config_right = rs.config()
-config_left = rs.config()
+class BaslerCamera(threading.Thread):
+    def __init__(self, camera_index):
+        super().__init__()
+        self.camera_index = camera_index
+        self.running = False
+        self.current_frame = None
+        self.camera = None
+        self.converter = pylon.ImageFormatConverter()
+        
+        # Set up format converter
+        self.converter.OutputPixelFormat = pylon.PixelType_BGR8packed
+        self.converter.OutputBitAlignment = pylon.OutputBitAlignment_MsbAligned
+        
+    def initialize_camera(self):
+        try:
+            tl_factory = pylon.TlFactory.GetInstance()
+            devices = tl_factory.EnumerateDevices()
+            
+            if not devices:
+                raise Exception("No camera found!")
+            
+            if self.camera_index >= len(devices):
+                raise Exception(f"Camera index {self.camera_index} is out of range!")
+            
+            self.camera = pylon.InstantCamera(tl_factory.CreateDevice(devices[self.camera_index]))
+            self.camera.Open()
+            
+            self.camera.ExposureTime.SetValue(10000)
+            self.camera.Gain.SetValue(0)
+            
+            self.camera.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)
+            print(f"Camera {self.camera_index} initialized successfully")
+            
+        except Exception as e:
+            print(f"Error initializing camera {self.camera_index}: {str(e)}")
+            raise
+    
+    def run(self):
+        self.running = True
+        self.initialize_camera()
+        
+        while self.running:
+            if self.camera.IsGrabbing():
+                grab_result = self.camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
+                
+                if grab_result.GrabSucceeded():
+                    image = self.converter.Convert(grab_result)
+                    self.current_frame = image.GetArray()
+                
+                grab_result.Release()
+    
+    def stop(self):
+        self.running = False
+        if self.camera:
+            self.camera.Close()
+    
+    def get_frame(self):
+        return self.current_frame
 
-serial_number_right, serial_number_left = ['152222070695', '153122073043']
+def main():
+    try:
+        # Create camera threads
+        camera_left = BaslerCamera(0)
+        camera_right = BaslerCamera(1)
+        
+        # Start camera threads
+        camera_left.start()
+        camera_right.start()
+        
+        # Wait for cameras to initialize
+        time.sleep(2)
+        
+        num = 0
+        
+        while True:
+            # Get frames from both cameras
+            frame_left = camera_left.get_frame()
+            frame_right = camera_right.get_frame()
+            
+            if frame_left is not None and frame_right is not None:
+                # Get the current frame size
+                height, width, _ = frame_left.shape
 
-# Add serial numbers for each camera
-config_right.enable_device(serial_number_right)
-config_left.enable_device(serial_number_left)
+                # Resize the frame
+                scale_percent = 80
+                new_width = int(width * scale_percent / 100)
+                new_height = int(height * scale_percent / 100)
+                dim = (new_width, new_height)
+                resized_left = cv2.resize(frame_left, dim, interpolation=cv2.INTER_AREA)
+                resized_right = cv2.resize(frame_right, dim, interpolation=cv2.INTER_AREA)
 
-# Enable color streams
-config_right.enable_stream(rs.stream.color, 848, 480, rs.format.bgr8, 30)
-config_left.enable_stream(rs.stream.color, 848, 480, rs.format.bgr8, 30)
+                cv2.imshow('Left Camera', resized_left)
+                cv2.imshow('Right Camera', resized_right)
 
-# Start both pipelines
-pipeline_left.start(config_left)
-pipeline_right.start(config_right)
+                k = cv2.waitKey(5)
 
-# pipeline_left, pipeline_right = init_cam_color()
+                if k == 27:  # ESC key
+                    break
+                elif k == ord('s'):
+                    cv2.imwrite('camera_test/right/img' + str(num) + '.png', frame_right)
+                    cv2.imwrite('camera_test/left/img' + str(num) + '.png', frame_left)
+                    print("image saved!")
+                    num += 1
+                elif k == ord('q'):
+                    break
+        
+    except KeyboardInterrupt:
+        print("\nStopping cameras...")
+    finally:
+        camera_left.stop()
+        camera_right.stop()
+        camera_left.join()
+        camera_right.join()
+        cv2.destroyAllWindows()
 
-num = 0
-
-while True:
-
-    frames_left = pipeline_left.wait_for_frames()
-    frames_right = pipeline_right.wait_for_frames()
-
-    # Get color frames
-    color_frame_left = frames_left.get_color_frame()
-    color_frame_right = frames_right.get_color_frame()
-
-    # Convert RealSense frames to numpy arrays
-    color_image_left = np.asanyarray(color_frame_left.get_data())
-    color_image_right = np.asanyarray(color_frame_right.get_data())
-
-    # Get the current frame size
-    height, width, _ = color_image_left.shape
-
-    # # Resize the frame
-    scale_percent = 80
-    new_width = int(width * scale_percent / 100)
-    new_height = int(height * scale_percent / 100)
-    dim = (new_width, new_height)
-    resized_left = cv2.resize(color_image_left, dim, interpolation = cv2.INTER_AREA)
-    resized_right = cv2.resize(color_image_right, dim, interpolation = cv2.INTER_AREA)
-
-
-    cv2.imshow('Left Camera', resized_left)
-    cv2.imshow('Right Camera', resized_right)
-
-    # cv2.imshow('Left Camera', color_image_left)
-    # cv2.imshow('Right Camera ', color_image_right)
-
-    k = cv2.waitKey(5)
-
-    if k == 27:
-        break
-    elif k == ord('s'): # wait for 's' key to save and exit
-        cv2.imwrite('right/img' + str(num) + '.png', color_image_right)
-        cv2.imwrite('left/img' + str(num) + '.png', color_image_left)
-        print("image saved!")
-        num += 1
-    elif k == ord('q'):
-        break
-
-pipeline_left.stop()
-pipeline_right.stop()
-
-cv2.destroyAllWindows()
+if __name__ == "__main__":
+    main()
