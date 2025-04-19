@@ -1,102 +1,142 @@
 import threading
-from pypylon import pylon
 import cv2
 import numpy as np
 import time
+import json
+from camera_manager import CameraManager
+from serial_control import SerialController
 
-class BaslerCamera(threading.Thread):
-    def __init__(self, camera_index):
-        super().__init__()
-        self.camera_index = camera_index
-        self.running = False
-        self.current_frame = None
-        self.camera = None
-        self.converter = pylon.ImageFormatConverter()
-        
-        # Set up format converter
-        self.converter.OutputPixelFormat = pylon.PixelType_BGR8packed
-        self.converter.OutputBitAlignment = pylon.OutputBitAlignment_MsbAligned
-        
-    def initialize_camera(self):
-        try:
-            tl_factory = pylon.TlFactory.GetInstance()
-            devices = tl_factory.EnumerateDevices()
-            
-            if not devices:
-                raise Exception("No camera found!")
-            
-            if self.camera_index >= len(devices):
-                raise Exception(f"Camera index {self.camera_index} is out of range!")
-            
-            self.camera = pylon.InstantCamera(tl_factory.CreateDevice(devices[self.camera_index]))
-            self.camera.Open()
-            
-            self.camera.ExposureTime.SetValue(10000)
-            self.camera.Gain.SetValue(0)
-            
-            self.camera.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)
-            print(f"Camera {self.camera_index} initialized successfully")
-            
-        except Exception as e:
-            print(f"Error initializing camera {self.camera_index}: {str(e)}")
-            raise
-    
-    def run(self):
-        self.running = True
-        self.initialize_camera()
-        
-        while self.running:
-            if self.camera.IsGrabbing():
-                grab_result = self.camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
-                
-                if grab_result.GrabSucceeded():
-                    image = self.converter.Convert(grab_result)
-                    self.current_frame = image.GetArray()
-                
-                grab_result.Release()
-    
-    def stop(self):
-        self.running = False
-        if self.camera:
-            self.camera.Close()
-    
-    def get_frame(self):
-        return self.current_frame
+serial_controller = SerialController(port='COM5', baudrate=115200)
+serial_controller.start_trigger()
+
+# Global variables for color picker
+selected_color = None
+mouse_x, mouse_y = 0, 0
 
 def nothing(x):
     pass
 
+def mouse_callback(event, x, y, flags, param):
+    global selected_color, mouse_x, mouse_y
+    if event == cv2.EVENT_LBUTTONDOWN:
+        mouse_x, mouse_y = x, y
+        frame = param
+        if frame is not None:
+            # Get the color at the clicked position
+            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+            selected_color = hsv[y, x]
+            print(f"Selected HSV color: {selected_color}")
+            
+            # Set HSV ranges based on selected color
+            h, s, v = selected_color
+            
+            # Set reasonable ranges around the selected color
+            h_range = 10  # Hue range
+            s_range = 40  # Saturation range
+            v_range = 40  # Value range
+            
+            # Calculate min and max values
+            h_min = max(0, h - h_range)
+            h_max = min(179, h + h_range)
+            s_min = max(0, s - s_range)
+            s_max = min(255, s + s_range)
+            v_min = max(0, v - v_range)
+            v_max = min(255, v + v_range)
+            
+            # Update trackbars
+            cv2.setTrackbarPos('H min', 'HSV Trackbars', h_min)
+            cv2.setTrackbarPos('H max', 'HSV Trackbars', h_max)
+            cv2.setTrackbarPos('S min', 'HSV Trackbars', s_min)
+            cv2.setTrackbarPos('S max', 'HSV Trackbars', s_max)
+            cv2.setTrackbarPos('V min', 'HSV Trackbars', v_min)
+            cv2.setTrackbarPos('V max', 'HSV Trackbars', v_max)
+            
+            print(f"Set HSV ranges:")
+            print(f"H: {h_min}-{h_max}")
+            print(f"S: {s_min}-{s_max}")
+            print(f"V: {v_min}-{v_max}")
+
+def create_color_preview(hsv_value):
+    """Create a preview image of the selected HSV color"""
+    preview = np.zeros((100, 100, 3), dtype=np.uint8)
+    preview[:, :] = hsv_value
+    preview = cv2.cvtColor(preview, cv2.COLOR_HSV2BGR)
+    return preview
+
+def save_hsv_values(h_min, h_max, s_min, s_max, v_min, v_max, filename='hsv_values.json'):
+    """Save HSV values to a JSON file"""
+    values = {
+        'h_min': h_min,
+        'h_max': h_max,
+        's_min': s_min,
+        's_max': s_max,
+        'v_min': v_min,
+        'v_max': v_max
+    }
+    with open(filename, 'w') as f:
+        json.dump(values, f)
+    print(f"HSV values saved to {filename}")
+
+def load_hsv_values(filename='hsv_values.json'):
+    """Load HSV values from a JSON file"""
+    try:
+        with open(filename, 'r') as f:
+            values = json.load(f)
+        return values
+    except FileNotFoundError:
+        return None
+
 def main():
     try:
-        # Create windows for trackbars
+        # Create windows for trackbars and preview
         cv2.namedWindow('HSV Trackbars')
-        cv2.resizeWindow('HSV Trackbars', 1200, 1200)
+        cv2.resizeWindow('HSV Trackbars', 400, 400)
+        cv2.namedWindow('Color Preview')
+        cv2.namedWindow('Camera 1 Original')
+        cv2.namedWindow('Camera 2 Original')
         
         # Create trackbars
         cv2.createTrackbar('H min', 'HSV Trackbars', 0, 179, nothing)
-        cv2.createTrackbar('H max', 'HSV Trackbars', 81, 179, nothing)
-        cv2.createTrackbar('S min', 'HSV Trackbars', 109, 255, nothing)
+        cv2.createTrackbar('H max', 'HSV Trackbars', 179, 179, nothing)
+        cv2.createTrackbar('S min', 'HSV Trackbars', 0, 255, nothing)
         cv2.createTrackbar('S max', 'HSV Trackbars', 255, 255, nothing)
-        cv2.createTrackbar('V min', 'HSV Trackbars', 141, 255, nothing)
+        cv2.createTrackbar('V min', 'HSV Trackbars', 0, 255, nothing)
         cv2.createTrackbar('V max', 'HSV Trackbars', 255, 255, nothing)
         
-        # Create camera threads
-        camera1 = BaslerCamera(0)
-        camera2 = BaslerCamera(1)
+        # Create and start stereo camera system
+        camera_manager = CameraManager(gain=20,mode=1)
         
-        # Start camera threads
-        camera1.start()
-        camera2.start()
+        # Initialize serial controller and start trigger AFTER camera setup
         
-        # Wait for cameras to initialize
-        time.sleep(2)
+        
+        
+        print("Cameras initialized and started successfully")
+        print("Instructions:")
+        print("1. Click on the object in the camera view to sample its color")
+        print("2. Use trackbars to fine-tune the HSV range")
+        print("3. Press 's' to save current HSV values")
+        print("4. Press 'l' to load saved HSV values")
+        print("5. Press 'q' to quit")
+        
+        # Load saved HSV values if they exist
+        saved_values = load_hsv_values()
+        if saved_values:
+            cv2.setTrackbarPos('H min', 'HSV Trackbars', saved_values['h_min'])
+            cv2.setTrackbarPos('H max', 'HSV Trackbars', saved_values['h_max'])
+            cv2.setTrackbarPos('S min', 'HSV Trackbars', saved_values['s_min'])
+            cv2.setTrackbarPos('S max', 'HSV Trackbars', saved_values['s_max'])
+            cv2.setTrackbarPos('V min', 'HSV Trackbars', saved_values['v_min'])
+            cv2.setTrackbarPos('V max', 'HSV Trackbars', saved_values['v_max'])
+
         
         while True:
-            # Get frames from both cameras
-            frame1 = camera1.get_frame()
-            frame2 = camera2.get_frame()
+            # Get frames from stereo system
+            frame1, frame2, block_id1, block_id2 = camera_manager.get_synchronized_frames()
             
             if frame1 is not None and frame2 is not None:
+                # Set mouse callback for color picking
+                cv2.setMouseCallback('Camera 1 Original', mouse_callback, frame1)
+                
                 # Convert to HSV
                 hsv1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2HSV)
                 hsv2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2HSV)
@@ -112,6 +152,9 @@ def main():
                 # Create mask with current HSV values
                 lower = np.array([h_min, s_min, v_min])
                 upper = np.array([h_max, s_max, v_max])
+
+                hsv1 = cv2.GaussianBlur(hsv1, (7, 7), 0)
+                hsv2 = cv2.GaussianBlur(hsv2, (7, 7), 0)
                 
                 # Apply mask and preprocessing
                 mask1 = cv2.inRange(hsv1, lower, upper)
@@ -133,34 +176,57 @@ def main():
                 
                 # Draw contours that match ball size criteria
                 for contour in contours1:
-                    if 10 <= cv2.contourArea(contour) <= 300:
-                        x, y, w, h = cv2.boundingRect(contour)
-                        cv2.rectangle(frame1_with_contours, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                    x, y, w, h = cv2.boundingRect(contour)
+                    cv2.rectangle(frame1_with_contours, (x, y), (x + w, y + h), (0, 255, 0), 2)
                 
                 for contour in contours2:
-                    if 10 <= cv2.contourArea(contour) <= 300:
-                        x, y, w, h = cv2.boundingRect(contour)
-                        cv2.rectangle(frame2_with_contours, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                    x, y, w, h = cv2.boundingRect(contour)
+                    cv2.rectangle(frame2_with_contours, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                
+                # Scale frames to 40%
+                frame1_scaled = cv2.resize(frame1_with_contours, None, fx=0.4, fy=0.4)
+                mask1_scaled = cv2.resize(mask1, None, fx=0.4, fy=0.4)
+                frame2_scaled = cv2.resize(frame2_with_contours, None, fx=0.4, fy=0.4)
+                mask2_scaled = cv2.resize(mask2, None, fx=0.4, fy=0.4)
                 
                 # Display results
-                cv2.imshow('Camera 1 Original', frame1_with_contours)
-                cv2.imshow('Camera 1 Mask', mask1)
-                cv2.imshow('Camera 2 Original', frame2_with_contours)
-                cv2.imshow('Camera 2 Mask', mask2)
+                cv2.imshow('Camera 1 Original', frame1_scaled)
+                cv2.imshow('Camera 1 Mask', mask1_scaled)
+                cv2.imshow('Camera 2 Original', frame2_scaled)
+                cv2.imshow('Camera 2 Mask', mask2_scaled)
+                
+                # Show color preview if a color is selected
+                if selected_color is not None:
+                    preview = create_color_preview(selected_color)
+                    cv2.imshow('Color Preview', preview)
                 
                 # Print current HSV values
                 print(f"\rCurrent HSV values - Lower: [{h_min}, {s_min}, {v_min}], Upper: [{h_max}, {s_max}, {v_max}]", end='')
                 
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-        
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('q'):
+                    break
+                elif key == ord('s'):
+                    save_hsv_values(h_min, h_max, s_min, s_max, v_min, v_max)
+                elif key == ord('l'):
+                    saved_values = load_hsv_values()
+                    if saved_values:
+                        cv2.setTrackbarPos('H min', 'HSV Trackbars', saved_values['h_min'])
+                        cv2.setTrackbarPos('H max', 'HSV Trackbars', saved_values['h_max'])
+                        cv2.setTrackbarPos('S min', 'HSV Trackbars', saved_values['s_min'])
+                        cv2.setTrackbarPos('S max', 'HSV Trackbars', saved_values['s_max'])
+                        cv2.setTrackbarPos('V min', 'HSV Trackbars', saved_values['v_min'])
+                        cv2.setTrackbarPos('V max', 'HSV Trackbars', saved_values['v_max'])
+
+            else:
+                print("No synchronized frames available")
+                print(f"Block ID 1: {block_id1} != Block ID 2: {block_id2}")
+
     except KeyboardInterrupt:
         print("\nStopping cameras...")
     finally:
-        camera1.stop()
-        camera2.stop()
-        camera1.join()
-        camera2.join()
+        camera_manager.close()
+        serial_controller.stop_trigger()
         cv2.destroyAllWindows()
 
 if __name__ == "__main__":
