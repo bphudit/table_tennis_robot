@@ -32,7 +32,7 @@ class BaslerCamera(threading.Thread):
             self.camera.Open()
             
             self.camera.ExposureTime.SetValue(10000)
-            self.camera.Gain.SetValue(0)
+            self.camera.Gain.SetValue(20)
             
             self.camera.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)
             print(f"Camera {self.camera_index} initialized successfully")
@@ -88,7 +88,7 @@ def main():
                 height, width, _ = frame_left.shape
 
                 # Resize the frame
-                scale_percent = 80
+                scale_percent = 40
                 new_width = int(width * scale_percent / 100)
                 new_height = int(height * scale_percent / 100)
                 dim = (new_width, new_height)

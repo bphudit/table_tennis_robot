@@ -3,28 +3,42 @@ import cv2
 import numpy as np
 import time
 import json
-from camera_manager import CameraManager
+from camera_manager_instantarray import CameraManager
 from serial_control import SerialController
 
-serial_controller = SerialController(port='COM5', baudrate=115200)
+serial_controller = SerialController(port='COM4', baudrate=115200)
 serial_controller.start_trigger()
 
 # Global variables for color picker
 selected_color = None
 mouse_x, mouse_y = 0, 0
+clicked_points = []  # Store clicked points
 
 def nothing(x):
     pass
 
 def mouse_callback(event, x, y, flags, param):
-    global selected_color, mouse_x, mouse_y
+    global selected_color, mouse_x, mouse_y, clicked_points
     if event == cv2.EVENT_LBUTTONDOWN:
-        mouse_x, mouse_y = x, y
+        # Scale back from display coordinates to original frame coordinates
+        # Since display is scaled to 40%, multiply by 1/0.4 = 2.5
+        original_x = int(x * 2.5)
+        original_y = int(y * 2.5)
+        
+        mouse_x, mouse_y = original_x, original_y
         frame = param
+        
+        # Add clicked point to the list (store in original frame coordinates)
+        clicked_points.append((original_x, original_y))
+        
         if frame is not None:
-            # Get the color at the clicked position
+            # Get the color at the clicked position (using original coordinates)
             hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-            selected_color = hsv[y, x]
+            # Ensure coordinates are within frame bounds
+            h, w = hsv.shape[:2]
+            original_y = min(original_y, h-1)
+            original_x = min(original_x, w-1)
+            selected_color = hsv[original_y, original_x]
             print(f"Selected HSV color: {selected_color}")
             
             # Set HSV ranges based on selected color
@@ -88,6 +102,8 @@ def load_hsv_values(filename='hsv_values.json'):
 
 def main():
     try:
+        global clicked_points  # Add global declaration to access clicked_points
+        
         # Create windows for trackbars and preview
         cv2.namedWindow('HSV Trackbars')
         cv2.resizeWindow('HSV Trackbars', 400, 400)
@@ -104,7 +120,7 @@ def main():
         cv2.createTrackbar('V max', 'HSV Trackbars', 255, 255, nothing)
         
         # Create and start stereo camera system
-        camera_manager = CameraManager(gain=20,mode=1)
+        camera_manager = CameraManager(gain=20,mode=0)
         
         # Initialize serial controller and start trigger AFTER camera setup
         
@@ -116,7 +132,8 @@ def main():
         print("2. Use trackbars to fine-tune the HSV range")
         print("3. Press 's' to save current HSV values")
         print("4. Press 'l' to load saved HSV values")
-        print("5. Press 'q' to quit")
+        print("5. Press 'c' to clear all clicked points")
+        print("6. Press 'q' to quit")
         
         # Load saved HSV values if they exist
         saved_values = load_hsv_values()
@@ -163,8 +180,8 @@ def main():
                 # Apply morphological operations
                 kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
                 mask1 = cv2.morphologyEx(mask1, cv2.MORPH_OPEN, kernel)
-                mask1 = cv2.morphologyEx(mask1, cv2.MORPH_CLOSE, kernel)
                 mask2 = cv2.morphologyEx(mask2, cv2.MORPH_OPEN, kernel)
+                mask1 = cv2.morphologyEx(mask1, cv2.MORPH_CLOSE, kernel)
                 mask2 = cv2.morphologyEx(mask2, cv2.MORPH_CLOSE, kernel)
                 
                 # Find and draw contours
@@ -182,6 +199,12 @@ def main():
                 for contour in contours2:
                     x, y, w, h = cv2.boundingRect(contour)
                     cv2.rectangle(frame2_with_contours, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                
+                # Draw dots at all clicked points
+                for point in clicked_points:
+                    # Scale point coordinates based on the display scale factor
+                    px, py = point
+                    cv2.circle(frame1_with_contours, (px, py), 5, (0, 0, 255), -1)  # Draw a red dot
                 
                 # Scale frames to 40%
                 frame1_scaled = cv2.resize(frame1_with_contours, None, fx=0.4, fy=0.4)
@@ -217,6 +240,10 @@ def main():
                         cv2.setTrackbarPos('S max', 'HSV Trackbars', saved_values['s_max'])
                         cv2.setTrackbarPos('V min', 'HSV Trackbars', saved_values['v_min'])
                         cv2.setTrackbarPos('V max', 'HSV Trackbars', saved_values['v_max'])
+                elif key == ord('c'):
+                    # Clear all clicked points
+                    clicked_points = []
+                    print("\nCleared all clicked points")
 
             else:
                 print("No synchronized frames available")

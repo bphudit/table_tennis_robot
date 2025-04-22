@@ -34,8 +34,15 @@ class FrameVisualizer:
         
     def display_frames(self, frame1, frame2, process_time_ms=0):
         """Display two frames with FPS and processing time info"""
+        frame1, coords1 = frame1
+        frame2, coords2 = frame2
+
         # Update FPS
         current_fps = self.update_fps()
+        if coords1 is not None:
+            cv2.circle(frame1, coords1, 5, (0, 0, 255), -1)
+        if coords2 is not None:
+            cv2.circle(frame2, coords2, 5, (0, 0, 255), -1)
         
         # Resize frames
         frame1_resized = self.resize_frame(frame1)
