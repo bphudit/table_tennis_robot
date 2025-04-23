@@ -106,8 +106,8 @@ class TableCalibration:
         os.makedirs("src/table_pose", exist_ok=True)
         
         # Save the calibration points
-        np.savez("src/table_pose/left.npz", left_table_point=self.pixel2points['left'])
-        np.savez("src/table_pose/right.npz", right_table_point=self.pixel2points['right'])
+        np.savez("src/table_pose/right.npz", left_table_point=self.pixel2points['left'])
+        np.savez("src/table_pose/left.npz", right_table_point=self.pixel2points['right'])
         
         # Use points from both cameras to calculate transformation
         left_points = self.pixel2points['left']

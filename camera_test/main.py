@@ -18,8 +18,8 @@ pose_params = np.load('src/pose_parameters.npz')
 
 def main():
     # Initialize components
-    serial_controller = SerialController(port='COM4', baudrate=115200)
-    camera_manager = CameraManager(exposure_time=6000, gain=20, mode=0)
+    serial_controller = SerialController(port='/dev/cu.usbserial-0001', baudrate=115200)
+    camera_manager = CameraManager(exposure_time=6000, gain=15, mode=0)
     ball_detector = BallDetector(max_workers=2, 
                                 lower_limit=np.array([hsv_values['h_min'], hsv_values['s_min'], hsv_values['v_min']]), 
                                 upper_limit=np.array([hsv_values['h_max'], hsv_values['s_max'], hsv_values['v_max']]),
@@ -37,7 +37,7 @@ def main():
         while True:
             # Get synchronized frames and measure processing time
             frame_start_time = time.time()
-            img1, img2, block_id1, block_id2 = camera_manager.get_synchronized_frames()
+            img2, img1, block_id2, block_id1 = camera_manager.get_synchronized_frames()
 
             # Process frames if available
             if img1 is not None and img2 is not None:

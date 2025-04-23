@@ -48,24 +48,26 @@ class BallDetector:
         
         detected_rectangles = []
         ball_coords = None
-        for contour in contours:
-            if cv2.contourArea(contour) > min_area:
-                x, y, w, h = cv2.boundingRect(contour)
-                if self.downsample_ratio < 1.0:
-                    # Scale back to original frame dimensions
-                    scale = 1.0 / self.downsample_ratio
-                    x, y = int(x * scale), int(y * scale)
-                    w, h = int(w * scale), int(h * scale)
-                    cv2.rectangle(original_frame, (x, y), (x + w, y + h), (0, 255, 0), 1)
-                else:
-                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 1)
-                detected_rectangles.append((x, y, w, h))
-                
-                # Calculate center point (u, v)
-                u, v = x + w // 2, y + h // 2
-                ball_coords = (u, v)
+        if contours:
+            contour = max(contours, key=cv2.contourArea)
+            # for contour in contours:
+            #     if cv2.contourArea(contour) > min_area:
+            x, y, w, h = cv2.boundingRect(contour)
+            if self.downsample_ratio < 1.0:
+                # Scale back to original frame dimensions
+                scale = 1.0 / self.downsample_ratio
+                x, y = int(x * scale), int(y * scale)
+                w, h = int(w * scale), int(h * scale)
+                cv2.rectangle(original_frame, (x, y), (x + w, y + h), (0, 255, 0), 1)
+            else:
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 1)
+            detected_rectangles.append((x, y, w, h))
+            
+            # Calculate center point (u, v)
+            u, v = x + w // 2, y + h // 2
+            ball_coords = (u, v)
 
-                break
+                # break
                 
         processed_frame = original_frame if self.downsample_ratio < 1.0 else frame
         return processed_frame, ball_coords

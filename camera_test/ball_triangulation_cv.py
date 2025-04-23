@@ -43,13 +43,13 @@ class BallTriangulatorP:
 
             # Convert from homogeneous to 3D (divide by last row)
             points_3d = homogeneous_4d[:3, 0] / homogeneous_4d[3, 0]
-            X= points_3d.reshape((3, 1))
+            X_cam = points_3d.reshape((3, 1))
 
             # Transform to table coordinate system
-            # X_table = self.pose_rotation.T @ (X_cam - self.pose_translation)
+            X_table = self.pose_rotation.T @ (X_cam - self.pose_translation)
 
             # Optionally apply any convention shifts (e.g., -40mm offset)
-            x, y, z = float(X[0]), float(X[1]), float(-X[2] - 40)
+            x, y, z = float(X_table[0]), float(X_table[1]), float(X_table[2])
 
             # Timestamp
             t = time.time()

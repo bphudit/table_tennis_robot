@@ -6,7 +6,7 @@ import json
 from camera_manager_instantarray import CameraManager
 from serial_control import SerialController
 
-serial_controller = SerialController(port='COM4', baudrate=115200)
+serial_controller = SerialController(port='/dev/cu.usbserial-0001', baudrate=115200)
 serial_controller.start_trigger()
 
 # Global variables for color picker
@@ -120,7 +120,7 @@ def main():
         cv2.createTrackbar('V max', 'HSV Trackbars', 255, 255, nothing)
         
         # Create and start stereo camera system
-        camera_manager = CameraManager(gain=20,mode=0)
+        camera_manager = CameraManager(gain=15,mode=0)
         
         # Initialize serial controller and start trigger AFTER camera setup
         

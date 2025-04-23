@@ -26,8 +26,8 @@ class BallTriangulator:
         self.position_3D = []
     
     def process_frames_thread(self, coords_left, coords_right):
-        # If we have detected the ball in both frames, triangulate
-        if coords_left and coords_right:
+        # Check if we have valid coordinates
+        if coords_left is not None and coords_right is not None:
             u1, v1 = coords_left
             u2, v2 = coords_right
 
@@ -40,7 +40,9 @@ class BallTriangulator:
             position = self.triangulate_position(x1, x2)
             if position is not None:
                 print(f"Ball position: {position}")
-                
+                return position
+        
+        return None
     
     
     def triangulate_position(self, x1, x2):
@@ -68,14 +70,14 @@ class BallTriangulator:
         d1 = depths[0]
         
         # Compute the 3D point in Camera 1's frame
-        X = d1 * x1
+        X_cam = d1 * x1
         
         # Transform to table coordinate system
-        # X = self.pose_rotation.T @ (X_cam.reshape((3, 1)) - self.pose_translation)
+        X = self.pose_rotation.T @ (X_cam.reshape((3, 1)) - self.pose_translation)
         
         # Store timestamp with position
         t = time.time()
-        x, y, z = float(X[0]), float(X[1]), float(-X[2] - 40)  # Match the convention in depth_test_thread.py
+        x, y, z = float(X_cam[0]), float(X_cam[1]), float(-X_cam[2] - 40)  # Match the convention in depth_test_thread.py
         
         # Record position with timestamp
         self.position_3D.append([x, y, z, t])
