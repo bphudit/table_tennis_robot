@@ -32,7 +32,7 @@ class BaslerCamera(threading.Thread):
             self.camera.Open()
             
             self.camera.ExposureTime.SetValue(10000)
-            self.camera.Gain.SetValue(15)
+            self.camera.Gain.SetValue(10)
             
             self.camera.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)
             print(f"Camera {self.camera_index} initialized successfully")

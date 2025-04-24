@@ -38,7 +38,7 @@ def click_event(event, x, y, flags, param):
         print(pixel2points)
 
 # Load your image (replace 'your_image.jpg' with your actual image file path)
-img = cv2.imread("camera_test/right/img0.png")
+img = cv2.imread("camera_test/left/img0.png")
 # height, width, channels = img.shape
 
 # scale_percent = 200
@@ -59,4 +59,4 @@ cv2.waitKey(0)
 cv2.destroyAllWindows()
 
 # np.savez("table_pose/right.npz", left_table_point = pixel2points)
-np.savez("src/table_pose/right.npz", right_table_point = pixel2points)
+np.savez("src/table_pose/left.npz", right_table_point = pixel2points)

@@ -8,6 +8,7 @@ import numpy as np
 from ball_triangulation_cv import BallTriangulatorP
 from ball_triangulation import BallTriangulator
 from scipy.io import loadmat
+from plot_3D import plot_3d
 
 
 with open('hsv_values.json', 'r') as f:
@@ -25,10 +26,12 @@ def main():
                                 upper_limit=np.array([hsv_values['h_max'], hsv_values['s_max'], hsv_values['v_max']]),
                                 downsample_ratio=0.5)  # Use 50% resolution for faster processing
     visualizer = FrameVisualizer(scale_factor=0.5)
-    ball_triangulator_cv = BallTriangulatorP(stereo_params, pose_params)
+    ball_triangulator_cv = BallTriangulatorP(stereo_params, pose_params, coord_frame='table')
     ball_triangulator = BallTriangulator(stereo_params, pose_params)
 
     count = 0  # Counter for synchronization errors
+
+    position_3D = []
     
     try:
         print("Press 'q' to quit")
@@ -37,15 +40,18 @@ def main():
         while True:
             # Get synchronized frames and measure processing time
             frame_start_time = time.time()
-            img2, img1, block_id2, block_id1 = camera_manager.get_synchronized_frames()
+            img1, img2, block_id1, block_id2 = camera_manager.get_synchronized_frames()
 
             # Process frames if available
             if img1 is not None and img2 is not None:
                 # Detect balls in both frames
                 img1, img2 = ball_detector.process_stereo_frames(img1, img2)
 
-                ball_triangulator.process_frames_thread(img1[1], img2[1])
-                ball_triangulator_cv.process_frames_thread(img1[1], img2[1])
+                # ball_triangulator.process_frames_thread(img1[1], img2[1])
+                result = ball_triangulator_cv.process_frames_thread(img1[1], img2[1])
+                
+                if result is not None:
+                    position_3D.append(result)
 
                 print("--------------------------------")
                 
@@ -64,6 +70,8 @@ def main():
                 print(f"Block ID 1: {block_id1} != Block ID 2: {block_id2}")
                 count += 1
                 print(f"Count: {count}")
+
+        
                 
 
                 
@@ -74,6 +82,11 @@ def main():
         ball_detector.close()
         visualizer.close()
         print("All resources released")
+
+        position_3D = np.array(position_3D)
+        print(f"Max z val: {np.max(-position_3D[:,2])}")
+        print(f"Min z val: {np.min(-position_3D[:,2])}")
+        plot_3d( position_3D[:,1], position_3D[:,0], -position_3D[:,2])
 
 if __name__ == "__main__":
     main() 

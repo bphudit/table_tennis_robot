@@ -3,7 +3,7 @@ import numpy as np
 import time
 
 class BallTriangulatorP:
-    def __init__(self, stereo_params, pose_params):
+    def __init__(self, stereo_params, pose_params=None, coord_frame = 'table'):
         # Camera intrinsics and extrinsics
         self.K1 = stereo_params['K1']  # 3x3 intrinsic for cam1
         self.K2 = stereo_params['K2']  # 3x3 intrinsic for cam2
@@ -20,10 +20,11 @@ class BallTriangulatorP:
         self.D1 = stereo_params.get('D1', None)
         self.D2 = stereo_params.get('D2', None)
 
-        # Pose parameters for table coordinate transform
-        self.pose_rotation = pose_params['rotation_matrix']      # 3x3
-        self.pose_translation = pose_params['translation_matrix'] # 3x1
-
+        if pose_params is not None:
+            # Pose parameters for table coordinate transform
+            self.pose_rotation = pose_params['rotation_matrix']      # 3x3
+            self.pose_translation = pose_params['translation_matrix'] # 3x1
+        self.coord_frame = coord_frame
 
         # Preallocate 3D position log
         self.position_3D = []
@@ -45,11 +46,14 @@ class BallTriangulatorP:
             points_3d = homogeneous_4d[:3, 0] / homogeneous_4d[3, 0]
             X_cam = points_3d.reshape((3, 1))
 
-            # Transform to table coordinate system
-            X_table = self.pose_rotation.T @ (X_cam - self.pose_translation)
+            if self.coord_frame == 'table':
+                # Transform to table coordinate system
+                X_table = self.pose_rotation.T @ (X_cam - self.pose_translation)
 
-            # Optionally apply any convention shifts (e.g., -40mm offset)
-            x, y, z = float(X_table[0]), float(X_table[1]), float(X_table[2])
+                # Optionally apply any convention shifts (e.g., -40mm offset)
+                x, y, z = float(X_table[0]), float(X_table[1]), float(X_table[2])
+            elif self.coord_frame == 'camera':
+                x, y, z = float(X_cam[0]), float(X_cam[1]), float(X_cam[2])
 
             # Timestamp
             t = time.time()

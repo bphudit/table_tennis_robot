@@ -12,7 +12,7 @@ from ball_triangulation_cv import BallTriangulatorP
 class DistanceMeasurer:
     def __init__(self, stereo_params, pose_params, left_images_dir='left_camera', right_images_dir='right_camera'):
         # Initialize triangulator using camera parameters
-        self.triangulator = BallTriangulatorP(stereo_params, pose_params)
+        self.triangulator = BallTriangulatorP(stereo_params, pose_params, coord_frame = 'camera')
         
         # Initialize directories for left and right camera images
         self.left_images_dir = left_images_dir

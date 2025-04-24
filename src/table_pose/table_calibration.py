@@ -2,9 +2,14 @@ import cv2
 import numpy as np
 from scipy.io import loadmat
 import os
+import sys
+
+# Add the root directory to the Python path to enable importing from camera_test
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+from camera_test.ball_triangulation_cv import BallTriangulatorP
 
 class TableCalibration:
-    def __init__(self):
+    def __init__(self): 
         # Load stereo camera parameters
         data = loadmat('src/stereoParameters.mat')
         self.K1 = data['K1']
@@ -18,6 +23,8 @@ class TableCalibration:
         self.reset_points()
         self.current_window = None
         self.scale_factor = 2.0  # 2x larger display
+
+        self.triangulator = BallTriangulatorP(stereo_params=data, pose_params=None, coord_frame = 'camera')
         
     def reset_points(self):
         """Reset all points for both cameras."""
@@ -37,6 +44,7 @@ class TableCalibration:
             # Use appropriate camera matrix for conversion
             if camera == 'left':
                 self.pixel2points[camera].append(self.K1_inv @ np.array([original_x, original_y, 1]))
+                
             else:
                 self.pixel2points[camera].append(self.K2_inv @ np.array([original_x, original_y, 1]))
             
@@ -110,21 +118,27 @@ class TableCalibration:
         np.savez("src/table_pose/left.npz", right_table_point=self.pixel2points['right'])
         
         # Use points from both cameras to calculate transformation
-        left_points = self.pixel2points['left']
-        right_points = self.pixel2points['right']
+        left_points = self.points['left']
+        right_points = self.points['right']
         result = []
         
         # Calculate 3D coordinates for each point pair
+        # for i in range(len(left_points)):
+        #     x1, x2 = np.array(left_points[i]), np.array(right_points[i])
+        #     A = np.array([[x1[0], -self.R_cam[0, 0] * x2[0] - self.R_cam[0, 1] * x2[1] - self.R_cam[0, 2]],
+        #                  [x1[1], -self.R_cam[1, 0] * x2[0] - self.R_cam[1, 1] * x2[1] - self.R_cam[1, 2]],
+        #                  [1, -self.R_cam[2, 0] * x2[0] - self.R_cam[2, 1] * x2[1] - self.R_cam[2, 2]]])
+        #     B = self.T_cam.flatten()
+        #     depths = np.linalg.lstsq(A, B, rcond=None)[0]
+        #     d1 = depths[0]
+        #     X = d1 * x1
+        #     result.append(X)
         for i in range(len(left_points)):
-            x1, x2 = np.array(left_points[i]), np.array(right_points[i])
-            A = np.array([[x1[0], -self.R_cam[0, 0] * x2[0] - self.R_cam[0, 1] * x2[1] - self.R_cam[0, 2]],
-                         [x1[1], -self.R_cam[1, 0] * x2[0] - self.R_cam[1, 1] * x2[1] - self.R_cam[1, 2]],
-                         [1, -self.R_cam[2, 0] * x2[0] - self.R_cam[2, 1] * x2[1] - self.R_cam[2, 2]]])
-            B = self.T_cam.flatten()
-            depths = np.linalg.lstsq(A, B, rcond=None)[0]
-            d1 = depths[0]
-            X = d1 * x1
-            result.append(X)
+            # print(np.array(left_points[i][:2]), np.array(right_points[i][:2]))
+            result.append(self.triangulator.process_frames_thread(np.array(left_points[i][:2]), np.array(right_points[i][:2])))
+            print('--------------------------------')
+
+        print(result)
 
         # Calculate basis vectors and ensure orthogonality using Gram-Schmidt process
         vx = result[1] - result[0]  # Vector from point 0 to point 1 (width)
@@ -175,13 +189,13 @@ def main():
     
     # Capture corners for left camera
     print("\nStarting with LEFT camera...")
-    if not calibrator.capture_corners("camera_test/left/img0.png", 'left'):
+    if not calibrator.capture_corners("camera_test/left/img1.png", 'left'):
         print("\nCalibration cancelled.")
         return
         
     # Capture corners for right camera
     print("\nNow for RIGHT camera...")
-    if not calibrator.capture_corners("camera_test/right/img0.png", 'right'):
+    if not calibrator.capture_corners("camera_test/right/img1.png", 'right'):
         print("\nCalibration cancelled.")
         return
     

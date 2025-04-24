@@ -37,6 +37,8 @@ class FrameVisualizer:
         frame1, coords1 = frame1
         frame2, coords2 = frame2
 
+        
+
         # Update FPS
         current_fps = self.update_fps()
         if coords1 is not None:
