@@ -6,7 +6,7 @@ import glob
 from scipy.io import loadmat
 import math
 import sys
-from ball_triangulation_cv import BallTriangulatorP
+from main.ball_triangulation_cv import BallTriangulatorP
 
 
 class DistanceMeasurer:
