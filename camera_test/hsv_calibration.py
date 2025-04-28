@@ -3,8 +3,13 @@ import cv2
 import numpy as np
 import time
 import json
-from camera_manager_instantarray import CameraManager
-from serial_control import SerialController
+import sys
+import os
+
+# Add the current directory to the Python path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from main.camera_manager_instantarray import CameraManager
+from main.serial_control import SerialController
 
 serial_controller = SerialController(port='/dev/cu.usbserial-0001', baudrate=115200)
 serial_controller.start_trigger()

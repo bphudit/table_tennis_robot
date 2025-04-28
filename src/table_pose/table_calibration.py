@@ -6,7 +6,7 @@ import sys
 
 # Add the root directory to the Python path to enable importing from camera_test
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
-from camera_test.ball_triangulation_cv import BallTriangulatorP
+from camera_test.main.ball_triangulation_cv import BallTriangulatorP
 
 class TableCalibration:
     def __init__(self): 

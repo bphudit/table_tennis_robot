@@ -1,11 +1,10 @@
 import time
-from camera_manager_instantarray import CameraManager
-from serial_control import SerialController
-from visualization import FrameVisualizer
+from main.camera_manager_instantarray import CameraManager
+from main.serial_control import SerialController
+from main.visualization import FrameVisualizer
+from main.ball_triangulation_cv import BallTriangulatorP
 import numpy as np
-from ball_triangulation_cv import BallTriangulatorP
 import cv2
-import cv2.aruco as aruco
 import json
 from scipy.io import loadmat
 
@@ -25,13 +24,14 @@ def main():
     count = 0  # Counter for synchronization errors
 
     # Define dictionary and parameters
-    aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_ARUCO_ORIGINAL)
+    aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_1000)
     parameters = cv2.aruco.DetectorParameters()
 
     detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
 
-    left_points = []
-    right_points = []
+    # Initialize arrays with None values to store points in correct order
+    left_points = [None] * 4  # [a, b, c, d]
+    right_points = [None] * 4  # [e, f, g, h]
 
     result = []
     try:
@@ -49,7 +49,7 @@ def main():
             # Process frames if available
             if img1 is not None and img2 is not None:
                 
-                # Calculate processing time
+                # Calculate processing 
                 frame_processing_time = (time.time() - frame_start_time) * 1000  # ms
                 
                 # Display frames with stats
@@ -59,68 +59,100 @@ def main():
                 corners1, ids1, rejected1 = detector.detectMarkers(gray1)
                 corners2, ids2, rejected2 = detector.detectMarkers(gray2)
 
-                for i in range(len(ids1)):
-                    if ids1[i] == 971:
+                print(ids1)
+                print(ids2)
+                print('--------------------------------')        
 
-                        bottom_left_x = corners1[i][0][0][0]
-                        bottom_left_y = corners1[i][0][0][1]
+                if ids1 is not None and ids2 is not None:
+                    print('Not None')
+                    if len(ids1) == 4 and len(ids2) == 4:
+                        # Reset points arrays for each new complete detection
+                        left_points = [None] * 4
+                        right_points = [None] * 4
+                        
+                        # Process left camera markers (a, b, c, d)
+                        for i in range(len(ids1)):
+                            if ids1[i] == 0:
+                                bottom_left_x = corners1[i][0][0][0]
+                                bottom_left_y = corners1[i][0][0][1]
+                                cv2.circle(gray1, (int(bottom_left_x), int(bottom_left_y)), 10, (0, 255, 0), -1)
+                                
+                                # Store at index 0 (a)
+                                left_points[0] = [bottom_left_x, bottom_left_y]
+                                print('a')
+                            elif ids1[i] == 1: 
+                                top_left_x = corners1[i][0][1][0]
+                                top_left_y = corners1[i][0][1][1]
+                                cv2.circle(gray1, (int(top_left_x), int(top_left_y)), 10, (0, 0, 255), -1)
+                                
+                                # Store at index 1 (b)
+                                left_points[1] = [top_left_x, top_left_y]
+                                print('b')
+                            elif ids1[i] == 2:
+                                top_right_x = corners1[i][0][2][0]
+                                top_right_y = corners1[i][0][2][1]
+                                cv2.circle(gray1, (int(top_right_x), int(top_right_y)), 10, (0, 255, 0), -1)
+                                
+                                # Store at index 2 (c)
+                                left_points[2] = [top_right_x, top_right_y]
+                                print('c')
+                            elif ids1[i] == 3:
+                                bottom_right_x = corners1[i][0][3][0]
+                                bottom_right_y = corners1[i][0][3][1]
+                                cv2.circle(gray1, (int(bottom_right_x), int(bottom_right_y)), 10, (0, 0, 255), -1)
+                                
+                                # Store at index 3 (d)
+                                left_points[3] = [bottom_right_x, bottom_right_y]
+                                print('d')
+                        
+                        # Process right camera markers (e, f, g, h)
+                        for i in range(len(ids2)):
+                            if ids2[i] == 0:
+                                bottom_left_x = corners2[i][0][0][0]
+                                bottom_left_y = corners2[i][0][0][1]
+                                cv2.circle(gray2, (int(bottom_left_x), int(bottom_left_y)), 10, (0, 255, 0), -1)
+                                
+                                # Store at index 0 (e)
+                                right_points[0] = [bottom_left_x, bottom_left_y]
+                                print('e')
+                            elif ids2[i] == 1: 
+                                top_left_x = corners2[i][0][1][0]
+                                top_left_y = corners2[i][0][1][1]
+                                cv2.circle(gray2, (int(top_left_x), int(top_left_y)), 10, (0, 0, 255), -1)
+                                
+                                # Store at index 1 (f)
+                                right_points[1] = [top_left_x, top_left_y]
+                                print('f')
+                            elif ids2[i] == 2:
+                                top_right_x = corners2[i][0][2][0]
+                                top_right_y = corners2[i][0][2][1]
+                                cv2.circle(gray2, (int(top_right_x), int(top_right_y)), 10, (0, 255, 0), -1)
+                                
+                                # Store at index 2 (g)
+                                right_points[2] = [top_right_x, top_right_y]
+                                print('g')
+                            elif ids2[i] == 3:
+                                bottom_right_x = corners2[i][0][3][0]
+                                bottom_right_y = corners2[i][0][3][1]
+                                cv2.circle(gray2, (int(bottom_right_x), int(bottom_right_y)), 10, (0, 0, 255), -1)
+                                
+                                # Store at index 3 (h)
+                                right_points[3] = [bottom_right_x, bottom_right_y]
+                                print('h')
 
-                        top_left_x = corners1[i][0][1][0]
-                        top_left_y = corners1[i][0][1][1]
-
-                        cv2.circle(gray1, (int(bottom_left_x), int(bottom_left_y)), 10, (0, 255, 0), -1)
-                        cv2.circle(gray1, (int(top_left_x), int(top_left_y)), 10, (0, 0, 255), -1)
-
-                        left_points.append([bottom_left_x, bottom_left_y])
-                        left_points.append([top_left_x, top_left_y])
-                        print('a')
-                    elif ids1[i] == 212: 
-
-                        top_right_x = corners1[i][0][2][0]
-                        top_right_y = corners1[i][0][2][1]
-
-                        bottom_right_x = corners1[i][0][3][0]
-                        bottom_right_y = corners1[i][0][3][1]
-
-                        cv2.circle(gray1, (int(top_right_x), int(top_right_y)), 10, (0, 255, 0), -1)
-                        cv2.circle(gray1, (int(bottom_right_x), int(bottom_right_y)), 10, (0, 0, 255), -1)
-
-                        left_points.append([bottom_right_x, bottom_right_y])
-                        left_points.append([top_right_x, top_right_y])
-                        print('b')
-                for i in range(len(ids2)):
-                    if ids2[i] == 971:
-                        bottom_left_x = corners2[i][0][0][0]
-                        bottom_left_y = corners2[i][0][0][1]
-
-                        top_left_x = corners2[i][0][1][0]
-                        top_left_y = corners2[i][0][1][1]
-
-                        cv2.circle(gray2, (int(bottom_left_x), int(bottom_left_y)), 10, (0, 255, 0), -1)
-                        cv2.circle(gray2, (int(top_left_x), int(top_left_y)), 10, (0, 0, 255), -1)
-
-                        right_points.append([bottom_left_x, bottom_left_y])
-                        right_points.append([top_left_x, top_left_y])
-                        print('c')
-                    elif ids2[i] == 212: 
-
-                        top_right_x = corners2[i][0][2][0]
-                        top_right_y = corners2[i][0][2][1]
-
-                        bottom_right_x = corners2[i][0][3][0]
-                        bottom_right_y = corners2[i][0][3][1]
-
-                        cv2.circle(gray2, (int(top_right_x), int(top_right_y)), 10, (0, 255, 0), -1)
-                        cv2.circle(gray2, (int(bottom_right_x), int(bottom_right_y)), 10, (0, 0, 255), -1)
-
-                        right_points.append([top_right_x, top_right_y])
-                        right_points.append([bottom_right_x, bottom_right_y])
-                        print('d')
-
-
-
-                for i in range(len(left_points)):
-                    result.append(ball_triangulator_cv.process_frames_thread(np.array(left_points[i][:2]), np.array(right_points[i][:2])))
+                        # Check if all markers were detected correctly in both cameras
+                        if None not in left_points and None not in right_points:
+                            # Clear previous results
+                            result = []
+                            # Process triangulation for all points in order
+                            for i in range(4):
+                                result.append(ball_triangulator_cv.process_frames_thread(
+                                    np.array(left_points[i][:2]), 
+                                    np.array(right_points[i][:2])
+                                ))
+                            print("All points processed in order!")
+                        else:
+                            print("Not all markers detected correctly")
 
                 if len(result) == 4:
                     # Calculate basis vectors and ensure orthogonality using Gram-Schmidt process
@@ -160,10 +192,8 @@ def main():
                     return R, T
 
 
-
-
-                # cv2.imshow("Left Camera", gray1)
-                # cv2.imshow("Right Camera", gray2)
+                cv2.imshow("Left Camera", gray1)
+                cv2.imshow("Right Camera", gray2)
                 
                 # Check for quit key
                 if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -175,10 +205,7 @@ def main():
                 count += 1
                 print(f"Count: {count}")
 
-        
-                
-
-                
+    
     finally:
         # Clean up resources
         serial_controller.stop_trigger()

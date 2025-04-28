@@ -6,7 +6,7 @@ from ball_detection import BallDetector
 from visualization import FrameVisualizer
 import numpy as np
 from ball_triangulation_cv import BallTriangulatorP
-from ball_triangulation import BallTriangulator
+# from ball_triangulation import BallTriangulator
 from scipy.io import loadmat
 from plot_3D import plot_3d
 
@@ -27,11 +27,12 @@ def main():
                                 downsample_ratio=0.5)  # Use 50% resolution for faster processing
     visualizer = FrameVisualizer(scale_factor=0.5)
     ball_triangulator_cv = BallTriangulatorP(stereo_params, pose_params, coord_frame='table')
-    ball_triangulator = BallTriangulator(stereo_params, pose_params)
+    # ball_triangulator = BallTriangulator(stereo_params, pose_params)
 
     count = 0  # Counter for synchronization errors
 
     position_3D = []
+    last_timestamp = 0
     
     try:
         print("Press 'q' to quit")
@@ -40,7 +41,7 @@ def main():
         while True:
             # Get synchronized frames and measure processing time
             frame_start_time = time.time()
-            img1, img2, block_id1, block_id2 = camera_manager.get_synchronized_frames()
+            img1, img2, bid, tms = camera_manager.get_synchronized_frames()
 
             # Process frames if available
             if img1 is not None and img2 is not None:
@@ -48,7 +49,13 @@ def main():
                 img1, img2 = ball_detector.process_stereo_frames(img1, img2)
 
                 # ball_triangulator.process_frames_thread(img1[1], img2[1])
-                result = ball_triangulator_cv.process_frames_thread(img1[1], img2[1])
+                result = ball_triangulator_cv.process_frames_thread(img1[1], img2[1], tms)
+               
+                # if last_timestamp == 0:
+                #     last_timestamp = tms
+                # else:
+                #     print((tms - last_timestamp)* (10**-6))
+                #     last_timestamp = tms
                 
                 if result is not None:
                     position_3D.append(result)
@@ -58,23 +65,16 @@ def main():
                 # Calculate processing time
                 frame_processing_time = (time.time() - frame_start_time) * 1000  # ms
                 
-                # Display frames with stats
-                key = visualizer.display_frames(img1, img2, frame_processing_time)
+                # # Display frames with stats
+                # key = visualizer.display_frames(img1, img2, frame_processing_time)
                 
-                # Check for quit key
-                if key == ord('q'):
-                    break
+                # # Check for quit key
+                # if key == ord('q'):
+                #     break
             else:
                 # Handle synchronization errors
                 print("No synchronized frames available")
-                print(f"Block ID 1: {block_id1} != Block ID 2: {block_id2}")
-                count += 1
-                print(f"Count: {count}")
 
-        
-                
-
-                
     finally:
         # Clean up resources
         serial_controller.stop_trigger()
@@ -84,9 +84,12 @@ def main():
         print("All resources released")
 
         position_3D = np.array(position_3D)
+        # np.savez('/Users/phuditthaksinawong/clone_github_table_tennis/table_tennis_robot/camera_test/data/data_paddle_curve.npz', position_3D=position_3D)
         print(f"Max z val: {np.max(-position_3D[:,2])}")
         print(f"Min z val: {np.min(-position_3D[:,2])}")
         plot_3d( position_3D[:,1], position_3D[:,0], -position_3D[:,2])
+
+        
 
 if __name__ == "__main__":
     main() 

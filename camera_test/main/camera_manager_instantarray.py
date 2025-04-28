@@ -47,6 +47,7 @@ class CameraManager:
             return None, None, None, None
 
         frames = {}
+        timestamps = {}
 
         while True:
             # Retrieve next available frame from any camera
@@ -57,17 +58,21 @@ class CameraManager:
 
             ctx = grab.GetCameraContext()  # 0 or 1
             bid = grab.BlockID
+            tms = grab.TimeStamp
             img = self.converter.Convert(grab).GetArray()
             grab.Release()
 
             # Store by block ID and camera context
             frames.setdefault(bid, {})[ctx] = img
-
+            # Store timestamp for this block ID
+            timestamps[bid] = tms
+            # print(timestamps)
+            # print(bid, timestamps[bid])
             # Check if we have both cameras for this block ID
             if bid in frames and len(frames[bid]) == 2:
                 img0 = frames[bid][0]
                 img1 = frames[bid][1]
-                return img0, img1, bid, bid
+                return img0, img1, bid, timestamps[bid]
 
         # If we reach here, failed to get synchronized pair
         return None, None, None, None

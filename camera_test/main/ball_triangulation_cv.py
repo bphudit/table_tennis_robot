@@ -29,7 +29,7 @@ class BallTriangulatorP:
         # Preallocate 3D position log
         self.position_3D = []
 
-    def process_frames_thread(self, coords_left, coords_right):
+    def process_frames_thread(self, coords_left, coords_right, tms):
         # Proceed only if both detections exist
         if coords_left is not None and coords_right is not None:
             u1, v1 = coords_left
@@ -56,10 +56,10 @@ class BallTriangulatorP:
                 x, y, z = float(X_cam[0]), float(X_cam[1]), float(X_cam[2])
 
             # Timestamp
-            t = time.time()
+            t = tms
             self.position_3D.append([x, y, z, t])
 
             print(f"Ball position: [{x:.2f}, {y:.2f}, {z:.2f}] at {t:.3f}")
 
-            return np.array([x, y, z])
+            return np.array([x, y, z, t])
         return None
