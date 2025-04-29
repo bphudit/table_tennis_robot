@@ -29,11 +29,8 @@ def main():
     ball_triangulator_cv = BallTriangulatorP(stereo_params, pose_params, coord_frame='table')
     # ball_triangulator = BallTriangulator(stereo_params, pose_params)
 
-    count = 0  # Counter for synchronization errors
-
     position_3D = []
-    last_timestamp = 0
-    
+
     try:
         print("Press 'q' to quit")
         serial_controller.start_trigger()
@@ -48,15 +45,9 @@ def main():
                 # Detect balls in both frames
                 img1, img2 = ball_detector.process_stereo_frames(img1, img2)
 
-                # ball_triangulator.process_frames_thread(img1[1], img2[1])
+                # Triangulate ball position
                 result = ball_triangulator_cv.process_frames_thread(img1[1], img2[1], tms)
-               
-                # if last_timestamp == 0:
-                #     last_timestamp = tms
-                # else:
-                #     print((tms - last_timestamp)* (10**-6))
-                #     last_timestamp = tms
-                
+
                 if result is not None:
                     position_3D.append(result)
 
@@ -84,7 +75,7 @@ def main():
         print("All resources released")
 
         position_3D = np.array(position_3D)
-        # np.savez('/Users/phuditthaksinawong/clone_github_table_tennis/table_tennis_robot/camera_test/data/data_paddle_curve.npz', position_3D=position_3D)
+        np.savez('/Users/phuditthaksinawong/clone_github_table_tennis/table_tennis_robot/camera_test/data/data_paddle.npz', position_3D=position_3D)
         print(f"Max z val: {np.max(-position_3D[:,2])}")
         print(f"Min z val: {np.min(-position_3D[:,2])}")
         plot_3d( position_3D[:,1], position_3D[:,0], -position_3D[:,2])

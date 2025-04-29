@@ -29,7 +29,7 @@ class CameraManager:
             cam.TriggerMode.SetValue("On")  # enable external trigger mode
             cam.ExposureTime.SetValue(exposure_time)
             cam.Gain.SetValue(gain)
-        
+            cam.MaxNumBuffer = 10
         # Prepare converter for OpenCV
         self.converter = pylon.ImageFormatConverter()
         self.converter.OutputPixelFormat = pylon.PixelType_BGR8packed
@@ -65,14 +65,14 @@ class CameraManager:
             # Store by block ID and camera context
             frames.setdefault(bid, {})[ctx] = img
             # Store timestamp for this block ID
-            timestamps[bid] = tms
+            timestamps.setdefault(bid, {})[ctx] = tms
             # print(timestamps)
             # print(bid, timestamps[bid])
             # Check if we have both cameras for this block ID
             if bid in frames and len(frames[bid]) == 2:
                 img0 = frames[bid][0]
                 img1 = frames[bid][1]
-                return img0, img1, bid, timestamps[bid]
+                return img0, img1, bid, timestamps[bid][0]
 
         # If we reach here, failed to get synchronized pair
         return None, None, None, None
@@ -83,3 +83,4 @@ class CameraManager:
         for cam in self.cams:
             if cam.IsOpen():
                 cam.Close()
+
