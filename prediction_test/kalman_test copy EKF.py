@@ -1,28 +1,25 @@
+import sys
+import os
+
+# Add the parent directory to sys.path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from src.kalmanEKF import KalmanFilter 
 import numpy as np
 from matplotlib import pyplot as plt
 import time
+from plot_3D import plot_3d
 
-data = np.load('data/data1.npz')
+data = np.load('prediction_test/data/data_paddle.npz')
 
-position_3D = data['position_3D']
-
+position_3D = np.array([[pos[1], pos[0], -pos[2], pos[3]] for pos in data['position_3D']])
 
 measurements = []
-
 dt_ls = []
-
-# for i in range(1, len(z)):
-#     dt_ls.append(t[i] - t[i-1])
-#     delta = (t[i] - t[i-1])
-#     velocity_x = (x[i] - x[i-1])/delta
-#     velocity_y = (y[i] - y[i-1])/delta
-#     velocity_z = (z[i] - z[i-1])/delta
-#     measurements.append((x[i], y[i], z[i], velocity_x, velocity_y, velocity_z))
 
 
 for i in range(1, len(position_3D[:,-1])):
-    dt = position_3D[i][-1] - position_3D[i-1][-1]
+    dt = (position_3D[i][-1] - position_3D[i-1][-1]) * (10**-9)
     dt_ls.append(dt)
     velocity_x = (position_3D[i][0] - position_3D[i-1][0])/dt
     velocity_y = (position_3D[i][1] - position_3D[i-1][1])/dt
@@ -40,8 +37,8 @@ initial_state = [[measurements[0][0]],
                  [measurements[0][4]],
                  [measurements[0][5]]]
 
-initial_cov = np.array([[2, 0, 0, 0, 0, 0],
-                        [0, 2, 0, 0, 0, 0],
+initial_cov = np.array([[5, 0, 0, 0, 0, 0],
+                        [0, 5, 0, 0, 0, 0],
                         [0, 0, 5, 0, 0, 0],
                         [0, 0, 0, 1, 0, 0],
                         [0, 0, 0, 0, 1, 0],
@@ -49,19 +46,19 @@ initial_cov = np.array([[2, 0, 0, 0, 0, 0],
 
 #Process Noise (Lower = trust more in model)
 Q = np.array([
-    [0.1, 0,    0,    0,    0,    0],   # Variance for Px
-    [0,    0.1, 0,    0,    0,    0],   # Variance for Py
-    [0,    0,    2, 0,    0,    0],   # Variance for Pz (more uncertainty)
-    [0,    0,    0,    0.5, 0,    0],   # Variance for Vx
-    [0,    0,    0,    0,    0.5, 0],   # Variance for Vy
-    [0,    0,    0,    0,    0,    5] # Variance for Vz (more uncertainty)
+    [1,  0,    0,    0,    0,    0],   # Variance for Px
+    [0,    1,  0,    0,    0,    0],   # Variance for Py
+    [0,    0,    1,    0,    0,    0],   # Variance for Pz (more uncertainty)
+    [0,    0,    0,    0.5,  0,    0],   # Variance for Vx
+    [0,    0,    0,    0,    0.5,  0],   # Variance for Vy
+    [0,    0,    0,    0,    0,    0.5] # Variance for Vz (more uncertainty)
 ])
 
 
 #Measurement Noise
 R = np.array([
-    [1.0, 0,    0,    0,    0,    0],   # Variance for measured Px
-    [0,    1.0, 0,    0,    0,    0],   # Variance for measured Py
+    [0.5, 0,    0,    0,    0,    0],   # Variance for measured Px
+    [0,    0.5, 0,    0,    0,    0],   # Variance for measured Py
     [0,    0,    0.5, 0,    0,    0],   # Variance for measured Pz
     [0,    0,    0,    5.0, 0,    0],   # Variance for measured Vx
     [0,    0,    0,    0,    5.0, 0],   # Variance for measured Vy
@@ -84,22 +81,6 @@ pure_predict_x = []
 pure_predict_y = []
 pure_predict_z = []
 
-from numba import njit
-
-def process(kf, index):
-    kf.predict(dt_ls[index])
-    if kf.x[2] <= 0:  
-        kf.handle_bounce()
-    #     print('HANDLED')
-
-    # print(f"{kf.x} {index} Predict ")
-
-    if position_3D[index][1] >= 2740//2:
-        kf.update(z=measurements[index+1].reshape(-1,1))
-        
-
-        
-
 
 for i in range(len(measurements) - 1):
     # process(kf, i)
@@ -110,34 +91,33 @@ for i in range(len(measurements) - 1):
 
     # print(f"{kf.x} {i} Predict ")
 
-    if position_3D[i][1] >= 2740//2:
+    if position_3D[i][1] <= 2000//2:
         kf.predict(dt_ls[i])
+        print(f"{kf.x} {i} Prediction")
         kf.update(z=np.array([[measurements[i+1][0]], 
                             [measurements[i+1][1]],
                             [measurements[i+1][2]],
                             [measurements[i+1][3]],
                             [measurements[i+1][4]],
                             [measurements[i+1][5]]]))
-        print(np.array([[measurements[i+1][0]], 
-                            [measurements[i+1][1]],
-                            [measurements[i+1][2]],
-                            [measurements[i+1][3]],
-                            [measurements[i+1][4]],
-                            [measurements[i+1][5]]]))
+        print(f"{measurements[i+1].reshape(-1,1)} {i} Actual (Measurement)")
+        
         prediction_x.append(kf.x[0])
         prediction_y.append(kf.x[1])
         prediction_z.append(kf.x[2])
-        print(f"{kf.x} {i} Update ")
+        print(f"{kf.x} {i} Updated")
+        print("--------------------------------")
 
 print(kf.x[1])
 
-
 dt = 0.01
-while kf.x[1] > 0:
+while kf.x[1] < 2740:
     kf.predict(dt)
 
     if kf.x[2] <= 0:  
         kf.handle_bounce()
+
+    print(f"{kf.x} {i} Predict ")
     
     pure_predict_x.append(kf.x[0])
     pure_predict_y.append(kf.x[1])
@@ -145,8 +125,6 @@ while kf.x[1] > 0:
 
 print(kf.x[1])
 print(len(pure_predict_x))
-
-
 
 
 ax = plt.axes(projection='3d')

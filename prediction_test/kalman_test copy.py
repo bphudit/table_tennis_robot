@@ -1,13 +1,13 @@
-from prediction_test.kalman import KalmanFilter 
+from kalman import KalmanFilter 
 import numpy as np
 from matplotlib import pyplot as plt
-from src.plot_3D import plot_3d
+from plot_3D import plot_3d
 
-data = np.load('data/data2.npz')
+data = np.load('prediction_test/data/data_paddle.npz')
 
 position_3D = data['position_3D']
 
-plot_3d(position_3D[:,0], position_3D[:,1], position_3D[:,2])
+plot_3d(position_3D[:,1], position_3D[:,0], -position_3D[:,2])
 
 # # Sample data (replace with your actual data)
 # height = position_3D[:, 0]
