@@ -7,15 +7,80 @@ from scipy.signal import find_peaks
 import math
 
 class BounceTrajectoryEvaluator:
-    def __init__(self, T, X, Y, Z):
-        self.T = T
-        self.X = X
-        self.Y = Y
-        self.Z = Z
-        self.original_data = np.column_stack((X, Y, Z))
+    def __init__(self, T, X, Y, Z, sort_timestamps=True, table_boundaries=None):
+        """
+        Initialize the trajectory evaluator
         
-        # Shift time to start at 0
-        self.T_shifted = self.T - self.T.min()
+        Args:
+            T: Time values
+            X, Y, Z: Coordinate values
+            sort_timestamps: Whether to sort the data by timestamps
+            table_boundaries: Dictionary with table boundaries {x_min, x_max, y_min, y_max}
+        """
+        # Save original data before filtering
+        self.original_T = T
+        self.original_X = X
+        self.original_Y = Y
+        self.original_Z = Z
+        
+        # Apply table boundary filtering if specified
+        if table_boundaries is not None:
+            # Filter points within table boundaries
+            mask = (
+                (X >= table_boundaries['x_min']) & 
+                (X <= table_boundaries['x_max']) & 
+                (Y >= table_boundaries['y_min']) & 
+                (Y <= table_boundaries['y_max'])
+            )
+            
+            T = T[mask]
+            X = X[mask]
+            Y = Y[mask]
+            Z = Z[mask]
+            
+            # Report how many points were filtered out
+            points_filtered = len(self.original_X) - len(X)
+            percent_filtered = (points_filtered / len(self.original_X)) * 100 if len(self.original_X) > 0 else 0
+            print(f"Table boundary filtering: {points_filtered} points removed ({percent_filtered:.1f}%)")
+            print(f"Remaining points: {len(X)}")
+            
+            # If all points were filtered, this is a problem
+            if len(X) == 0:
+                raise ValueError("All points were outside table boundaries! Check your boundary values.")
+        
+        # If sort_timestamps is True, sort all data by timestamp
+        if sort_timestamps:
+            # Create a sorting index based on timestamps
+            sorted_indices = np.argsort(T)
+            self.T = T[sorted_indices]
+            self.X = X[sorted_indices]
+            self.Y = Y[sorted_indices]
+            self.Z = Z[sorted_indices]
+            
+            # Check for large gaps in the timestamps
+            time_diffs = np.diff(self.T)
+            median_diff = np.median(time_diffs)
+            large_gaps = np.where(time_diffs > median_diff * 100)[0]
+            if len(large_gaps) > 0:
+                print(f"Warning: Large time gaps detected at indices {large_gaps}")
+                print(f"Time differences at these gaps: {time_diffs[large_gaps]}")
+                print(f"Median time difference: {median_diff}")
+        else:
+            self.T = T
+            self.X = X
+            self.Y = Y
+            self.Z = Z
+            
+        self.data = np.column_stack((self.X, self.Y, self.Z))
+        
+        # Normalize timestamp - convert to relative seconds
+        # This handles both large microsecond timestamps and regular timestamps
+        self.T_shifted = (self.T - self.T.min())
+        
+        # If timestamps are in microseconds, convert to seconds
+        if np.max(self.T_shifted) > 1e10:
+            self.T_shifted = self.T_shifted / 1e6
+            print("Detected microsecond timestamps, converting to seconds")
         
         # Physics constants
         self.g = 9.81  # gravity in m/s²
@@ -23,17 +88,34 @@ class BounceTrajectoryEvaluator:
         # Store bounce segments
         self.bounce_segments = []
         self.bounce_indices = []
+        
+        # Save table boundaries
+        self.table_boundaries = table_boundaries
 
     def parabolic_motion(self, t, a, b, c):
         """General parabolic motion equation: a*t² + b*t + c"""
         return a*t**2 + b*t + c
 
-    def detect_bounces(self, min_bounce_height=10, smoothing_window=3):
+    def detect_bounces(self, min_bounce_height=None, smoothing_window=3, verbose=True):
         """Detect bounce points in the trajectory using Z-coordinate minima"""
+        # Auto-determine min_bounce_height if not specified
+        if min_bounce_height is None:
+            z_range = np.max(self.Z) - np.min(self.Z)
+            min_bounce_height = z_range * 0.05  # 5% of Z range
+            if verbose:
+                print(f"Auto-determined min_bounce_height: {min_bounce_height:.2f}")
+        
         # Optional: Simple smoothing to reduce noise
         if smoothing_window > 1:
-            Z_smooth = np.convolve(self.Z, np.ones(smoothing_window)/smoothing_window, mode='valid')
-            T_smooth = self.T_shifted[smoothing_window//2:-(smoothing_window//2) if smoothing_window//2 > 0 else None]
+            # Make sure we have enough points for smoothing
+            if len(self.Z) < smoothing_window:
+                if verbose:
+                    print(f"Warning: Not enough points for smoothing window of {smoothing_window}. Using all available points.")
+                Z_smooth = self.Z
+                T_smooth = self.T_shifted
+            else:
+                Z_smooth = np.convolve(self.Z, np.ones(smoothing_window)/smoothing_window, mode='valid')
+                T_smooth = self.T_shifted[smoothing_window//2:-(smoothing_window//2) if smoothing_window//2 > 0 else None]
         else:
             Z_smooth = self.Z
             T_smooth = self.T_shifted
@@ -45,10 +127,12 @@ class BounceTrajectoryEvaluator:
         if len(peaks) == 0:
             # No bounces detected, treat entire trajectory as one segment
             self.bounce_indices = [0, len(self.Z)-1]
-            return
+            if verbose:
+                print("No bounces detected. Treating as a single trajectory.")
+            return self
             
         # Convert peak indices from smoothed array back to original indices
-        if smoothing_window > 1:
+        if smoothing_window > 1 and len(self.Z) >= smoothing_window:
             peaks = peaks + smoothing_window//2
         
         # Add start and end points to segment the trajectory
@@ -69,11 +153,14 @@ class BounceTrajectoryEvaluator:
         filtered_bounces.append(bounce_points[-1])
         self.bounce_indices = filtered_bounces
         
-        print(f"Detected {len(filtered_bounces)-1} trajectory segments")
-        for i in range(len(filtered_bounces)-1):
-            print(f"Segment {i+1}: Points {filtered_bounces[i]} to {filtered_bounces[i+1]}")
+        if verbose:
+            print(f"Detected {len(filtered_bounces)-1} trajectory segments")
+            for i in range(len(filtered_bounces)-1):
+                print(f"Segment {i+1}: Points {filtered_bounces[i]} to {filtered_bounces[i+1]}")
+        
+        return self
 
-    def fit_segments(self):
+    def fit_segments(self, verbose=True):
         """Fit separate parabolic models to each trajectory segment"""
         num_segments = len(self.bounce_indices) - 1
         
@@ -81,25 +168,44 @@ class BounceTrajectoryEvaluator:
             start_idx = self.bounce_indices[i]
             end_idx = self.bounce_indices[i+1]
             
+            # Skip segments that are too short (need at least 5 points for stable fitting)
+            if end_idx - start_idx < 5:
+                if verbose:
+                    print(f"Segment {i+1} too short, skipping.")
+                continue
+            
             # Extract segment data
             t_seg = self.T_shifted[start_idx:end_idx+1]
             x_seg = self.X[start_idx:end_idx+1]
             y_seg = self.Y[start_idx:end_idx+1]
             z_seg = self.Z[start_idx:end_idx+1]
             
+            # Check for large time gaps within this segment
+            if len(t_seg) > 1:
+                t_diffs = np.diff(t_seg)
+                median_diff = np.median(t_diffs)
+                max_diff = np.max(t_diffs)
+                
+                # If there's a suspiciously large gap, warn and continue
+                if max_diff > median_diff * 100:
+                    if verbose:
+                        print(f"Warning: Large time gap detected within segment {i+1}. Gap size: {max_diff:.6f}, Median: {median_diff:.6f}")
+            
             # Shift time to start at 0 for this segment
             t_seg_shifted = t_seg - t_seg.min()
             
             try:
                 # Fit X trajectory with parabola: x(t) = ax*t² + bx*t + cx
-                x_params, _ = curve_fit(self.parabolic_motion, t_seg_shifted, x_seg)
+                x_params, _ = curve_fit(self.parabolic_motion, t_seg_shifted, x_seg, 
+                                       maxfev=10000)  # Increase max iterations
                 
                 # Fit Y trajectory with parabola: y(t) = ay*t² + by*t + cy
-                y_params, _ = curve_fit(self.parabolic_motion, t_seg_shifted, y_seg)
+                y_params, _ = curve_fit(self.parabolic_motion, t_seg_shifted, y_seg,
+                                       maxfev=10000)
                 
                 # Fit Z trajectory with parabola: z(t) = az*t² + bz*t + cz
-                # For physics-based model, we could set az = -0.5*g, but we'll let the data decide
-                z_params, _ = curve_fit(self.parabolic_motion, t_seg_shifted, z_seg)
+                z_params, _ = curve_fit(self.parabolic_motion, t_seg_shifted, z_seg,
+                                       maxfev=10000)
                 
                 # Store segment parameters
                 self.bounce_segments.append({
@@ -112,9 +218,13 @@ class BounceTrajectoryEvaluator:
                     'z_params': z_params
                 })
                 
-                print(f"Segment {i+1} fitted successfully")
+                if verbose:
+                    print(f"Segment {i+1} fitted successfully")
             except Exception as e:
-                print(f"Failed to fit segment {i+1}, skipping: {e}")
+                if verbose:
+                    print(f"Failed to fit segment {i+1}, skipping: {e}")
+        
+        return self
     
     def generate_fitted_curves(self, points_per_segment=100):
         """Generate fitted curves for all segments"""
@@ -194,12 +304,15 @@ class BounceTrajectoryEvaluator:
             })
         
         # Calculate overall metrics
-        overall_mse = np.mean(np.array(overall_errors)**2)
-        overall_rmse = np.sqrt(overall_mse)
-        overall_mae = np.mean(np.abs(overall_errors))
-        overall_max = np.max(overall_errors)
+        if len(overall_errors) > 0:
+            overall_mse = np.mean(np.array(overall_errors)**2)
+            overall_rmse = np.sqrt(overall_mse)
+            overall_mae = np.mean(np.abs(overall_errors))
+            overall_max = np.max(overall_errors)
+        else:
+            overall_mse = overall_rmse = overall_mae = overall_max = float('nan')
         
-        return {
+        self.metrics = {
             'segment_metrics': segment_metrics,
             'overall': {
                 'MSE': overall_mse,
@@ -208,8 +321,10 @@ class BounceTrajectoryEvaluator:
                 'Max Error': overall_max
             }
         }
+        
+        return self.metrics
     
-    def plot_3d_trajectory(self):
+    def plot_3d_trajectory(self, show=True, limit_axes=True, fig_title=None, show_table_outline=True):
         """Plot 3D trajectory with all segments"""
         # Get fitted curves
         fitted_segments = self.generate_fitted_curves()
@@ -231,19 +346,52 @@ class BounceTrajectoryEvaluator:
             ax.plot(segment_points[:,1], segment_points[:,2], segment_points[:,3], 
                     c=colors[i], linewidth=2, label=f'Segment {i+1}')
         
+        # If table boundaries are defined and show_table_outline is True, draw just the table outline
+        if self.table_boundaries is not None and show_table_outline:
+            # Extract table dimensions
+            x_min = self.table_boundaries['x_min']
+            x_max = self.table_boundaries['x_max']
+            y_min = self.table_boundaries['y_min']
+            y_max = self.table_boundaries['y_max']
+            
+            # Assuming Z=0 is the table height
+            z_table = 0
+            
+            # Plot the table edges only
+            ax.plot([x_min, x_max, x_max, x_min, x_min],
+                    [y_min, y_min, y_max, y_max, y_min],
+                    [z_table, z_table, z_table, z_table, z_table],
+                    'k-', linewidth=1.0, alpha=0.5, label='Table')
+        
         # Set labels and title
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
         ax.set_zlabel('Z')
-        ax.set_title('3D Trajectory with Parabolic Bounce Segments')
+        title = fig_title if fig_title else '3D Trajectory with Parabolic Bounce Segments'
+        ax.set_title(title)
+        
+        # Optionally limit axes to focus on the relevant part of the trajectory
+        if limit_axes:
+            # Add a small margin around the data
+            x_margin = (np.max(self.X) - np.min(self.X)) * 0.1
+            y_margin = (np.max(self.Y) - np.min(self.Y)) * 0.1
+            z_margin = (np.max(self.Z) - np.min(self.Z)) * 0.1
+            
+            ax.set_xlim(np.min(self.X) - x_margin, np.max(self.X) + x_margin)
+            ax.set_ylim(np.min(self.Y) - y_margin, np.max(self.Y) + y_margin)
+            ax.set_zlim(np.min(self.Z) - z_margin, np.max(self.Z) + z_margin)
         
         # Add legend (with smaller font to accommodate more segments)
         ax.legend(fontsize='small')
         
         plt.tight_layout()
+        
+        if show:
+            plt.show()
+            
         return fig
     
-    def plot_2d_projections(self):
+    def plot_2d_projections(self, show=True, limit_axes=True, fig_title=None, show_table_outline=True):
         """Plot 2D projections (XZ and YZ) with color-coded segments"""
         # Get fitted curves
         fitted_segments = self.generate_fitted_curves()
@@ -266,9 +414,27 @@ class BounceTrajectoryEvaluator:
             axes[0].plot(segment_points[:,1], segment_points[:,3], 
                      c=colors[i], linewidth=2, label=f'Segment {i+1}')
         
+        # If table boundaries are defined and show_table_outline is True, draw the table edge
+        if self.table_boundaries is not None and show_table_outline:
+            # Draw the table top edge in XZ view
+            x_min = self.table_boundaries['x_min']
+            x_max = self.table_boundaries['x_max']
+            z_table = 0
+            axes[0].plot([x_min, x_max], [z_table, z_table], 'k-', linewidth=1.0, alpha=0.5)
+        
+        # Optionally limit axes
+        if limit_axes:
+            x_margin = (np.max(self.X) - np.min(self.X)) * 0.1
+            z_margin = (np.max(self.Z) - np.min(self.Z)) * 0.1
+            axes[0].set_xlim(np.min(self.X) - x_margin, np.max(self.X) + x_margin)
+            axes[0].set_ylim(np.min(self.Z) - z_margin, np.max(self.Z) + z_margin)
+        
         axes[0].set_xlabel('X')
         axes[0].set_ylabel('Z')
-        axes[0].set_title('XZ Projection (Parabolic Fits)')
+        title = "XZ Projection (Parabolic Fits)"
+        if fig_title:
+            title = f"{fig_title} - {title}"
+        axes[0].set_title(title)
         axes[0].grid(True)
         axes[0].legend(fontsize='small')
         
@@ -284,16 +450,38 @@ class BounceTrajectoryEvaluator:
             axes[1].plot(segment_points[:,2], segment_points[:,3], 
                      c=colors[i], linewidth=2, label=f'Segment {i+1}')
         
+        # If table boundaries are defined and show_table_outline is True, draw the table edge
+        if self.table_boundaries is not None and show_table_outline:
+            # Draw the table top edge in YZ view
+            y_min = self.table_boundaries['y_min']
+            y_max = self.table_boundaries['y_max']
+            z_table = 0
+            axes[1].plot([y_min, y_max], [z_table, z_table], 'k-', linewidth=1.0, alpha=0.5)
+        
+        # Optionally limit axes
+        if limit_axes:
+            y_margin = (np.max(self.Y) - np.min(self.Y)) * 0.1
+            z_margin = (np.max(self.Z) - np.min(self.Z)) * 0.1
+            axes[1].set_xlim(np.min(self.Y) - y_margin, np.max(self.Y) + y_margin)
+            axes[1].set_ylim(np.min(self.Z) - z_margin, np.max(self.Z) + z_margin)
+        
         axes[1].set_xlabel('Y')
         axes[1].set_ylabel('Z')
-        axes[1].set_title('YZ Projection (Parabolic Fits)')
+        title = "YZ Projection (Parabolic Fits)"
+        if fig_title:
+            title = f"{fig_title} - {title}"
+        axes[1].set_title(title)
         axes[1].grid(True)
         axes[1].legend(fontsize='small')
         
         plt.tight_layout()
+        
+        if show:
+            plt.show()
+            
         return fig
     
-    def plot_vs_time(self):
+    def plot_vs_time(self, show=True, fig_title=None):
         """Plot X, Y, Z coordinates vs time with fitted segments"""
         # Get fitted curves
         fitted_segments = self.generate_fitted_curves()
@@ -316,9 +504,19 @@ class BounceTrajectoryEvaluator:
             axes[0].plot(segment_points[:,0], segment_points[:,1], 
                      c=colors[i], linewidth=2, label=f'Segment {i+1}')
         
+        # If table boundaries are defined, draw horizontal lines for table boundaries
+        if self.table_boundaries is not None:
+            x_min = self.table_boundaries['x_min']
+            x_max = self.table_boundaries['x_max']
+            axes[0].axhline(y=x_min, color='k', linestyle='--', alpha=0.3)
+            axes[0].axhline(y=x_max, color='k', linestyle='--', alpha=0.3)
+        
         axes[0].set_xlabel('Time')
         axes[0].set_ylabel('X Position')
-        axes[0].set_title('X vs Time (Parabolic Fits)')
+        title = "X vs Time (Parabolic Fits)"
+        if fig_title:
+            title = f"{fig_title} - {title}"
+        axes[0].set_title(title)
         axes[0].grid(True)
         axes[0].legend(fontsize='small')
         
@@ -334,9 +532,19 @@ class BounceTrajectoryEvaluator:
             axes[1].plot(segment_points[:,0], segment_points[:,2], 
                      c=colors[i], linewidth=2, label=f'Segment {i+1}')
         
+        # If table boundaries are defined, draw horizontal lines for table boundaries
+        if self.table_boundaries is not None:
+            y_min = self.table_boundaries['y_min']
+            y_max = self.table_boundaries['y_max']
+            axes[1].axhline(y=y_min, color='k', linestyle='--', alpha=0.3)
+            axes[1].axhline(y=y_max, color='k', linestyle='--', alpha=0.3)
+        
         axes[1].set_xlabel('Time')
         axes[1].set_ylabel('Y Position')
-        axes[1].set_title('Y vs Time (Parabolic Fits)')
+        title = "Y vs Time (Parabolic Fits)"
+        if fig_title:
+            title = f"{fig_title} - {title}"
+        axes[1].set_title(title)
         axes[1].grid(True)
         axes[1].legend(fontsize='small')
         
@@ -352,57 +560,139 @@ class BounceTrajectoryEvaluator:
             axes[2].plot(segment_points[:,0], segment_points[:,3], 
                      c=colors[i], linewidth=2, label=f'Segment {i+1}')
         
+        # If showing table outline, add a horizontal line at Z=0 (table surface)
+        if self.table_boundaries is not None:
+            axes[2].axhline(y=0, color='k', linestyle='-', alpha=0.3)
+        
         axes[2].set_xlabel('Time')
         axes[2].set_ylabel('Z Position')
-        axes[2].set_title('Z vs Time (Parabolic Fits)')
+        title = "Z vs Time (Parabolic Fits)"
+        if fig_title:
+            title = f"{fig_title} - {title}"
+        axes[2].set_title(title)
         axes[2].grid(True)
         axes[2].legend(fontsize='small')
         
         plt.tight_layout()
+        
+        if show:
+            plt.show()
+            
         return fig
     
     def print_segment_details(self):
         """Print detailed information about each segment"""
+        results = []
+        
         for i, segment in enumerate(self.bounce_segments):
             ax, bx, cx = segment['x_params']
             ay, by, cy = segment['y_params']
             az, bz, cz = segment['z_params']
             
-            print(f"\nSegment {i+1} Details:")
-            print(f"Time range: {segment['t_min']:.4f} to {segment['t_max']:.4f} seconds")
-            print(f"X equation: {ax:.4f}*t² + {bx:.4f}*t + {cx:.4f}")
-            print(f"Y equation: {ay:.4f}*t² + {by:.4f}*t + {cy:.4f}")
-            print(f"Z equation: {az:.4f}*t² + {bz:.4f}*t + {cz:.4f}")
-            
-            # For Z, compare with expected gravity coefficient
-            print(f"Z acceleration: {2*az:.4f} (Expected from gravity: {-self.g:.4f})")
-            
-            # Calculate initial velocities (t=0 derivatives)
-            vx0 = bx
-            vy0 = by
-            vz0 = bz
-            print(f"Initial velocity: ({vx0:.2f}, {vy0:.2f}, {vz0:.2f}) m/s")
+            segment_info = {
+                'segment': i+1,
+                'time_range': (segment['t_min'], segment['t_max']),
+                'x_equation': (ax, bx, cx),
+                'y_equation': (ay, by, cy),
+                'z_equation': (az, bz, cz),
+                'z_acceleration': 2*az,
+                'initial_velocity': (bx, by, bz)
+            }
             
             # Calculate horizontal velocity and launch angle
+            vx0, vy0, vz0 = bx, by, bz
             horizontal_v = np.sqrt(vx0**2 + vy0**2)
             launch_angle = np.degrees(np.arctan2(vz0, horizontal_v))
+            
+            segment_info['horizontal_velocity'] = horizontal_v
+            segment_info['launch_angle'] = launch_angle
+            
+            results.append(segment_info)
+            
+            print(f"\nSegment {i+1} Details:")
+            print(f"Time range: {segment['t_min']:.6f} to {segment['t_max']:.6f} seconds")
+            print(f"X equation: {ax:.6f}*t² + {bx:.6f}*t + {cx:.4f}")
+            print(f"Y equation: {ay:.6f}*t² + {by:.6f}*t + {cy:.4f}")
+            print(f"Z equation: {az:.6f}*t² + {bz:.6f}*t + {cz:.4f}")
+            
+            # For Z, compare with expected gravity coefficient
+            print(f"Z acceleration: {2*az:.6f} (Expected from gravity: {-self.g:.4f})")
+            
+            print(f"Initial velocity: ({vx0:.2f}, {vy0:.2f}, {vz0:.2f}) m/s")
             print(f"Horizontal velocity: {horizontal_v:.2f} m/s")
             print(f"Launch angle: {launch_angle:.2f} degrees")
+        
+        return results
     
-    def print_error_metrics(self, metrics):
+    def print_error_metrics(self):
         """Print error metrics for all segments"""
+        if self.metrics is None:
+            self.calculate_error_metrics()
+            
         print("\nError Metrics per Segment:")
-        for segment_metric in metrics['segment_metrics']:
+        for segment_metric in self.metrics['segment_metrics']:
             print(f"\nSegment {segment_metric['segment']} ({segment_metric['Points']} points):")
             for key, value in segment_metric.items():
                 if key not in ['segment', 'Points']:
                     print(f"  {key}: {value:.4f}")
         
         print("\nOverall Metrics:")
-        for key, value in metrics['overall'].items():
+        for key, value in self.metrics['overall'].items():
             print(f"  {key}: {value:.4f}")
+        
+        return self.metrics
     
-    def run(self, min_bounce_height=5, smoothing_window=3):
+    def handle_split_trajectory(self, time_gap_threshold=100, verbose=True):
+        """
+        Analyzes the data to identify distinct trajectories separated by large time gaps
+        Returns a list of trajectory segment index ranges
+        
+        Args:
+            time_gap_threshold: Factor relative to median time difference to consider a gap
+            verbose: Whether to print information about detected trajectories
+        
+        Returns:
+            List of tuples (start_idx, end_idx) for each distinct trajectory
+        """
+        # Calculate time differences
+        if len(self.T) <= 1:
+            return [(0, 0)]
+            
+        time_diffs = np.diff(self.T)
+        median_diff = np.median(time_diffs)
+        
+        # Find large gaps (e.g., gaps > threshold * the median difference)
+        large_gaps = np.where(time_diffs > median_diff * time_gap_threshold)[0]
+        
+        if len(large_gaps) == 0:
+            # No large gaps, single trajectory
+            trajectories = [(0, len(self.T)-1)]
+            if verbose:
+                print("Single continuous trajectory detected")
+        else:
+            # Multiple trajectories
+            trajectories = []
+            
+            # Start with the first segment
+            start_idx = 0
+            
+            # Add each segment separated by large gaps
+            for gap_idx in large_gaps:
+                trajectories.append((start_idx, gap_idx))
+                start_idx = gap_idx + 1
+            
+            # Add the final segment
+            trajectories.append((start_idx, len(self.T)-1))
+            
+            if verbose:
+                print(f"{len(trajectories)} separate trajectories detected")
+                for i, (start, end) in enumerate(trajectories):
+                    print(f"Trajectory {i+1}: Points {start} to {end} ({end-start+1} points)")
+        
+        return trajectories
+    
+    def run(self, min_bounce_height=None, smoothing_window=3, limit_axes=True, time_gap_threshold=100, 
+            show_plots=True, fig_title=None, show_table_outline=True):
         """Run the full analysis pipeline"""
         print("Detecting bounces...")
         self.detect_bounces(min_bounce_height, smoothing_window)
@@ -411,22 +701,120 @@ class BounceTrajectoryEvaluator:
         self.fit_segments()
         
         print("\nGenerating visualizations...")
-        fig1 = self.plot_3d_trajectory()
-        fig2 = self.plot_2d_projections()
-        fig3 = self.plot_vs_time()
+        if show_plots:
+            self.plot_3d_trajectory(show=False, limit_axes=limit_axes, fig_title=fig_title, 
+                                   show_table_outline=show_table_outline)
+            self.plot_2d_projections(show=False, limit_axes=limit_axes, fig_title=fig_title,
+                                    show_table_outline=show_table_outline)
+            self.plot_vs_time(show=False, fig_title=fig_title)
         
         print("\nCalculating error metrics...")
-        metrics = self.calculate_error_metrics()
+        self.calculate_error_metrics()
         
         self.print_segment_details()
-        self.print_error_metrics(metrics)
+        self.print_error_metrics()
         
-        plt.show()
+        if show_plots:
+            plt.show()  # Display all figures at once
         
-        return metrics
+        return self.metrics
 
 
-# Load data and run evaluator
-data = np.load('/Users/bb/Downloads/data1.npz')['position_3D']
-evaluator = BounceTrajectoryEvaluator(data[:,3], data[:,0], data[:,1], data[:,2])
-metrics = evaluator.run(min_bounce_height=10, smoothing_window=3)
+def analyze_multiple_trajectories(data, min_bounce_height=None, smoothing_window=3, 
+                                time_gap_threshold=100, table_boundaries=None,
+                                show_table_outline=True):
+    """
+    Process a dataset with multiple trajectories, correctly handling large time gaps
+    
+    Args:
+        data: Numpy array with columns [X, Y, Z, T] or path to npz file
+        min_bounce_height: Minimum height for bounce detection (None for auto)
+        smoothing_window: Window size for smoothing data
+        time_gap_threshold: Threshold factor for detecting time gaps
+        table_boundaries: Dictionary with table boundaries {x_min, x_max, y_min, y_max}
+        show_table_outline: Whether to show table outline in plots
+        
+    Returns:
+        Dictionary with metrics and results for each trajectory
+    """
+    # Check if data is a file path or numpy array
+    if isinstance(data, str):
+        # Load from file
+        data = np.load(data)['position_3D']
+    
+    # Create evaluator with timestamp sorting enabled
+    main_evaluator = BounceTrajectoryEvaluator(
+        data[:,3],  # Time 
+        data[:,0],  # X
+        data[:,1],  # Y
+        -1 * data[:,2],  # Z (inverted)
+        sort_timestamps=True,  # Sort data by timestamps
+        table_boundaries=table_boundaries  # Apply table boundary filtering
+    )
+    
+    # First detect separate trajectories from large time gaps
+    trajectories = main_evaluator.handle_split_trajectory(time_gap_threshold=time_gap_threshold, verbose=True)
+    
+    all_results = []
+    
+    # Process each trajectory separately
+    for i, (start_idx, end_idx) in enumerate(trajectories):
+        print(f"\nProcessing trajectory {i+1} (points {start_idx} to {end_idx})")
+        
+        # Create a new evaluator with just this trajectory segment
+        traj_evaluator = BounceTrajectoryEvaluator(
+            main_evaluator.T[start_idx:end_idx+1],
+            main_evaluator.X[start_idx:end_idx+1],
+            main_evaluator.Y[start_idx:end_idx+1],
+            main_evaluator.Z[start_idx:end_idx+1],
+            sort_timestamps=False,  # Already sorted
+            table_boundaries=table_boundaries  # Keep table boundaries
+        )
+        
+        # Run analysis on this trajectory segment
+        fig_title = f"Trajectory {i+1}"
+        metrics = traj_evaluator.run(
+            min_bounce_height=min_bounce_height,
+            smoothing_window=smoothing_window,
+            limit_axes=True,
+            fig_title=fig_title,
+            show_table_outline=show_table_outline
+        )
+        
+        # Store results for this trajectory
+        all_results.append({
+            'trajectory_id': i+1,
+            'start_idx': start_idx,
+            'end_idx': end_idx,
+            'metrics': metrics,
+            'evaluator': traj_evaluator
+        })
+    
+    print("\nAll trajectories processed successfully!")
+    return all_results
+
+
+# Example usage showing how to analyze trajectories with table boundaries
+if __name__ == "__main__":
+    import numpy as np
+    
+    # Define table boundaries
+    TABLE_BOUNDARIES = {
+        'x_min': 0,
+        'x_max': 2740,
+        'y_min': 0,
+        'y_max': 1525
+    }
+    
+    # Load data
+    data_file = '/Users/bb/Downloads/data_paddle_4.npz'
+    
+    # Run analysis with table boundaries
+    results = analyze_multiple_trajectories(
+        data_file,
+        min_bounce_height=None,  # Auto-determine
+        smoothing_window=3,
+        time_gap_threshold=100,
+        table_boundaries=TABLE_BOUNDARIES,
+        show_table_outline=True  # Just show table outline, not the green surface
+    )
