@@ -132,7 +132,8 @@ class DistanceMeasurer:
         # Use the triangulator to calculate 3D position
         point_3d = self.triangulator.process_frames_thread(
             np.array([left_point[0], left_point[1]]), 
-            np.array([right_point[0], right_point[1]])
+            np.array([right_point[0], right_point[1]]),
+            0
         )
         
         if point_3d is not None:
