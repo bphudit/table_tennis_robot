@@ -6,30 +6,33 @@ class KalmanFilter:
         self.drag_coeff = drag_coeff  # new drag coefficient parameter
         self.g = -9810  # gravitational acceleration
         
+        #State vector
         self.x = np.array(initial_state)
+        #State to measurement matrix [(3,6) cause we only have position measurements]
+        self.H = np.array([
+            [1, 0, 0, 0, 0, 0],
+            [0, 1, 0, 0, 0, 0],
+            [0, 0, 1, 0, 0, 0]
+        ]).reshape(3, 6)
         
-        # Using a full 6x6 identity for measurement matrix
-        self.H = np.eye(6)
-        
+        #Process noise matrix
         self.Q = process_noise_std
+        #Measurement noise matrix
         self.R = measurement_noise_std
+        #Initial covariance matrix
         self.P = initial_covariance
 
     def predict(self, dt):
-        # Updated state transition matrix incorporating drag.
-        # The upper block integrates positions using velocities,
-        # while the lower block applies a decay (drag) on the velocities.
+        #State transition matrix
         self.A = np.array([
             [1, 0, 0, dt, 0,  0],
             [0, 1, 0, 0,  dt, 0],
             [0, 0, 1, 0,  0,  dt],
-            [0, 0, 0, 1 - self.drag_coeff*dt, 0, 0],
-            [0, 0, 0, 0, 1 - self.drag_coeff*dt, 0],
-            [0, 0, 0, 0,  0, 1 - self.drag_coeff*dt]
+            [0, 0, 0, 1 - self.drag_coeff * dt,  0,  0],
+            [0, 0, 0, 0,  1 - self.drag_coeff * dt ,  0],
+            [0, 0, 0, 0,  0,   1 - self.drag_coeff * dt]
         ])
-        
-        # The B matrix remains the same for integrating gravity into z.
-        # Note that gravity only affects the z-velocity and position.
+        #Control input matrix
         self.B = np.array([
             [0],
             [0],
@@ -38,12 +41,10 @@ class KalmanFilter:
             [0],
             [dt]
         ])
-        
+        #Control input vector
         u = np.array([self.g])
-        
         # State prediction: positions and velocities are updated.
-        self.x = self.A @ self.x + self.B * u
-        
+        self.x = self.A @ self.x + (self.B * u)
         # Predict error covariance
         self.P = self.A @ self.P @ self.A.T + self.Q
 
