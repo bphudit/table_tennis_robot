@@ -10,7 +10,7 @@ from matplotlib import pyplot as plt
 import time
 from plot_3D import plot_3d
 
-data = np.load('prediction_test/data/data_paddle_3.npz')
+data = np.load('prediction_test/data2/data_paddle_2.npz')
 
 position_3D = np.array([[pos[1], pos[0], -pos[2], pos[3]] for pos in data['position_3D']])
 
@@ -49,9 +49,9 @@ Q = np.array([
     [1,    0,    0,    0,    0,    0],   # Variance for Px
     [0,    1,    0,    0,    0,    0],   # Variance for Py
     [0,    0,    1,    0,    0,    0],   # Variance for Pz (more uncertainty)
-    [0,    0,    0,    1,    0,    0],   # Variance for Vx
-    [0,    0,    0,    0,    1,    0],   # Variance for Vy
-    [0,    0,    0,    0,    0,    100] # Variance for Vz (more uncertainty)
+    [0,    0,    0,    1000,    0,    0],   # Variance for Vx
+    [0,    0,    0,    0,    1000,    0],   # Variance for Vy
+    [0,    0,    0,    0,    0,    1000] # Variance for Vz (more uncertainty)
 ])
 
 
@@ -64,12 +64,12 @@ R = np.array([
 
 
 
-kf = KalmanFilter(process_noise_std=Q,
-                  measurement_noise_std=R,
-                  initial_state=initial_state, 
-                  initial_covariance=initial_cov, 
-                  restitution_coeff=0.85, 
-                  drag_coeff=0.3)
+# kf = KalmanFilter(process_noise_std=Q,
+#                   measurement_noise_std=R,
+#                   initial_state=initial_state, 
+#                   initial_covariance=initial_cov, 
+#                   restitution_coeff=0.9, 
+#                   drag_coeff=0.3)
 
 
 prediction_x = []
@@ -89,25 +89,32 @@ num_bounced = 0
 iteration_numbers = []
 iteration_numbers2 = []
 
-for i in range(len(measurements) - 1):
-    # print('--------------------------------')
-    # print(kf.P)
-    # print('--------------------------------')
-    if bounced:
-        count += 1
-        if count >= 10:
-            count = 0
-            bounced = False
+p_ls = []
 
-    if kf.x[2] <= 20:  
-        if not bounced:
-            kf.handle_bounce()
-            bounced = True
-            num_bounced += 1
-            print("Bounce--------------------------------")
+def predict_and_update(kf, prediction_x, prediction_y, prediction_z, bounced, count, num_bounced, iteration_numbers, num_data, index):
+    
+    for i in range(num_data):
+    # for i in range(len(measurements) - 1):
+        # print('--------------------------------')
+        # print(kf.P)
+        # print('--------------------------------')
 
-    if position_3D[i][1] <= 2740//2:
+
+        # if position_3D[i][1] <= 2740//2:
+        p_ls.append(kf.P)
         kf.predict(dt_ls[i])
+        if bounced:
+            count += 1
+            if count >= 10:
+                count = 0
+                bounced = False
+
+        if kf.x[2] <= 20:  
+            if not bounced:
+                kf.handle_bounce()
+                bounced = True
+                num_bounced += 1
+                # print("Bounce--------------------------------")
         # print(f"{kf.x} {i} Prediction")
         kf.update(z=np.array([[measurements[i+1][0]], 
                             [measurements[i+1][1]],
@@ -127,83 +134,120 @@ for i in range(len(measurements) - 1):
         # print(f"{kf.x} {i} Updated")
         # print("--------------------------------")
 
-dt = 0.01
-# while kf.x[1] < 2740:
-for i in range(index, len(measurements) - 1):
-    if kf.x[1] >= 2740:
-        break
+def pure_predict(kf, dt_ls, bounced, count, num_bounced, iteration_numbers2, qqqqqqpure_predict_x, pure_predict_y, pure_predict_z):
+    dt = 0.01
+    # while kf.x[1] < 2740:
+    for i in range(index+1, len(measurements) - 1):
+        if kf.x[1] >= 2740:
+            break
 
-    kf.predict(dt_ls[i])
-    iteration_numbers2.append(i)
-    if bounced:
-        count += 1
-        if count >= 10:
-            count = 0
-            bounced = False
+        kf.predict(dt_ls[i])
+        iteration_numbers2.append(i)
+        if bounced:
+            count += 1
+            if count >= 10:
+                count = 0
+                bounced = False
 
-    if kf.x[2] <= 20:  
-        if not bounced:
-            kf.handle_bounce()
-            bounced = True
-            num_bounced += 1
-            print("Bounce--------------------------------")
+        if kf.x[2] <= 20:  
+            if not bounced:
+                kf.handle_bounce()
+                bounced = True
+                num_bounced += 1
+                # print("Bounce--------------------------------")
 
-    print(f"{kf.x} {i} Predict ")
+        # print(f"{kf.x} {i} Predict ")
+        
+        pure_predict_x.append(kf.x[0])
+        pure_predict_y.append(kf.x[1])
+        pure_predict_z.append(kf.x[2])
+
+    return i 
+
+
+rmse_x_ls = []
+rmse_y_ls = []
+rmse_z_ls = []
+
+for i in range(98):
+    kf = KalmanFilter(process_noise_std=Q,
+                  measurement_noise_std=R,
+                  initial_state=initial_state, 
+                  initial_covariance=initial_cov, 
+                  restitution_coeff=0.9, 
+                  drag_coeff=0.5)
     
-    pure_predict_x.append(kf.x[0])
-    pure_predict_y.append(kf.x[1])
-    pure_predict_z.append(kf.x[2])
+    prediction_x = []
+    prediction_y = []
+    prediction_z = []
+
+    pure_predict_x = []
+    pure_predict_y = []
+    pure_predict_z = []
 
 
-print(f"Number of bounced: {num_bounced}")
+    index = 0
 
-print(measurements[i][0] - kf.x[0])
-print(measurements[i][1] - kf.x[1])
-print(measurements[i][2] - kf.x[2])
+    bounced = False
+    count = 0
+    num_bounced = 0
+
+    iteration_numbers = []
+    iteration_numbers2 = []
+
+    predict_and_update(kf, prediction_x, prediction_y, prediction_z, bounced, count, num_bounced, iteration_numbers, num_data=i, index=index)
+    a = pure_predict(kf, dt_ls, bounced, count, num_bounced, iteration_numbers2, pure_predict_x, pure_predict_y, pure_predict_z)
 
 
-# print(prediction_x[0])
-# print(measurements[:index+1,0][1])
 
+    rmse_x = np.sqrt(np.mean((np.array(pure_predict_x) - measurements[iteration_numbers2[0]:a,0])**2))
+    rmse_y = np.sqrt(np.mean((np.array(pure_predict_y) - measurements[iteration_numbers2[0]:a,1])**2))
+    rmse_z = np.sqrt(np.mean((np.array(pure_predict_z) - measurements[iteration_numbers2[0]:a,2])**2))
+
+    rmse_x_ls.append(rmse_x)
+    rmse_y_ls.append(rmse_y)
+    rmse_z_ls.append(rmse_z)
+
+    print(i)
+    print(f"RMSE X: {rmse_x:.2f} mm")
+    print(f"RMSE Y: {rmse_y:.2f} mm") 
+    print(f"RMSE Z: {rmse_z:.2f} mm")
+    print('--------------------------------')
+
+    # Add 3D plot as the fourth subplot
+    fig = plt.figure(figsize=(10, 8))
+    ax = fig.add_subplot(projection='3d')
+    ax.set_xlim([1525 , 0])
+    ax.set_ylim([0, 2740])
+    ax.set_zlim([0, 1500])
+
+    ax.set_xlabel('x [mm]')
+    ax.set_ylabel('y [mm]')
+    ax.set_zlabel('z [mm]')
+
+    ax.scatter(position_3D[:,0], position_3D[:,1], position_3D[:,2], marker = 'o', alpha=1, color='r', label='Coordinate from triangulation')
+    ax.scatter(prediction_x, prediction_y, prediction_z, marker = 'o', alpha=1, color='b', label='KF prediction and update')
+    ax.scatter(pure_predict_x, pure_predict_y, pure_predict_z, marker = 'o', alpha=1, color='orange', label='KF pure prediction')
+    ax.set_title('3D Trajectory')
+    ax.legend()
+
+    plt.tight_layout()
+    plt.show()
 
 
 plt.figure(figsize=(10, 8))
 
 plt.subplot(2, 2, 1)
-plt.plot(iteration_numbers, prediction_x, marker='x', label='KF prediction')
-plt.plot(iteration_numbers2, pure_predict_x, marker='x', label='KF pure prediction')
-plt.plot(np.arange(1,i+1), measurements[1:i+1,0], marker='x', label='Actual measurement')
-plt.axvline(x=iteration_numbers[-1], color='r', linestyle='--')
-plt.title('X Axis')
-plt.xlabel('Iteration')
-plt.ylabel('X [mm]')
+plt.plot(rmse_x_ls, label='RMSE X')
+plt.plot(rmse_y_ls, label='RMSE Y')
+plt.plot(rmse_z_ls, label='RMSE Z')
 plt.legend()
-plt.grid(True)
-
-plt.subplot(2, 2, 2)
-plt.plot(iteration_numbers, prediction_y, marker='x', label='KF prediction')
-plt.plot(iteration_numbers2, pure_predict_y, marker='x', label='KF pure prediction')
-plt.plot(np.arange(1,i+1), measurements[1:i+1,1], marker='x', label='Actual measurement')
-plt.axvline(x=iteration_numbers[-1], color='r', linestyle='--')
-plt.title('Y Axis')
 plt.xlabel('Iteration')
-plt.ylabel('Y [mm]')
-plt.legend()
-plt.grid(True)
-
-plt.subplot(2, 2, 3)
-plt.plot(iteration_numbers, prediction_z, marker='x', label='KF prediction')
-plt.plot(iteration_numbers2, pure_predict_z, marker='x', label='KF pure prediction')
-plt.plot(np.arange(1,i+1), measurements[1:i+1,2], marker='x', label='Actual measurement')
-plt.axvline(x=iteration_numbers[-1], color='r', linestyle='--')
-plt.title('Z Axis')
-plt.xlabel('Iteration')
-plt.ylabel('Z [mm]')
-plt.legend()
-plt.grid(True)
+plt.ylabel('RMSE [mm]')
+plt.title('RMSE of X, Y, Z')
 
 # Add 3D plot as the fourth subplot
-ax = plt.subplot(2, 2, 4, projection='3d')
+ax = plt.subplot(2, 2, 2, projection='3d')
 ax.set_xlim([1525 , 0])
 ax.set_ylim([0, 2740])
 ax.set_zlim([0, 1500])
@@ -213,13 +257,84 @@ ax.set_ylabel('y [mm]')
 ax.set_zlabel('z [mm]')
 
 ax.scatter(position_3D[:,0], position_3D[:,1], position_3D[:,2], marker = 'o', alpha=1, color='r', label='Coordinate from triangulation')
-ax.scatter(prediction_x, prediction_y, prediction_z, marker = 'o', alpha=1, color='b', label='KF prediction and update')
-ax.scatter(pure_predict_x, pure_predict_y, pure_predict_z, marker = 'o', alpha=1, color='orange', label='KF pure prediction')
+# ax.scatter(prediction_x, prediction_y, prediction_z, marker = 'o', alpha=1, color='b', label='KF prediction and update')
+# ax.scatter(pure_predict_x, pure_predict_y, pure_predict_z, marker = 'o', alpha=1, color='orange', label='KF pure prediction')
 ax.set_title('3D Trajectory')
 ax.legend()
 
 plt.tight_layout()
 plt.show()
+
+
+# print(f"Number of bounced: {num_bounced}")
+
+# print(measurements[i][0] - kf.x[0])
+# print(measurements[i][1] - kf.x[1])
+# print(measurements[i][2] - kf.x[2])
+
+
+# # Calculate RMSE between predicted and actual values
+# rmse_x = np.sqrt(np.mean((np.array(pure_predict_x) - measurements[iteration_numbers2[0]:i,0])**2))
+# rmse_y = np.sqrt(np.mean((np.array(pure_predict_y) - measurements[iteration_numbers2[0]:i,1])**2))
+# rmse_z = np.sqrt(np.mean((np.array(pure_predict_z) - measurements[iteration_numbers2[0]:i,2])**2))
+
+# print(f"RMSE X: {rmse_x:.2f} mm")
+# print(f"RMSE Y: {rmse_y:.2f} mm") 
+# print(f"RMSE Z: {rmse_z:.2f} mm")
+
+# plt.figure(figsize=(10, 8))
+
+# plt.subplot(2, 2, 1)
+# plt.plot(iteration_numbers, prediction_x, marker='x', label='KF prediction')
+# plt.plot(iteration_numbers2, pure_predict_x, marker='x', label='KF pure prediction')
+# plt.plot(np.arange(1,i), measurements[1:i,0], marker='x', label='Actual measurement')
+# plt.axvline(x=iteration_numbers[-1], color='r', linestyle='--')
+# plt.title('X Axis')
+# plt.xlabel('Iteration')
+# plt.ylabel('X [mm]')
+# plt.legend()
+# plt.grid(True)
+
+# plt.subplot(2, 2, 2)
+# plt.plot(iteration_numbers, prediction_y, marker='x', label='KF prediction')
+# plt.plot(iteration_numbers2, pure_predict_y, marker='x', label='KF pure prediction')
+# plt.plot(np.arange(1,i), measurements[1:i,1], marker='x', label='Actual measurement')
+# plt.axvline(x=iteration_numbers[-1], color='r', linestyle='--')
+# plt.title('Y Axis')
+# plt.xlabel('Iteration')
+# plt.ylabel('Y [mm]')
+# plt.legend()
+# plt.grid(True)
+
+# plt.subplot(2, 2, 3)
+# plt.plot(iteration_numbers, prediction_z, marker='x', label='KF prediction')
+# plt.plot(iteration_numbers2, pure_predict_z, marker='x', label='KF pure prediction')
+# plt.plot(np.arange(1,i), measurements[1:i,2], marker='x', label='Actual measurement')
+# plt.axvline(x=iteration_numbers[-1], color='r', linestyle='--')
+# plt.title('Z Axis')
+# plt.xlabel('Iteration')
+# plt.ylabel('Z [mm]')
+# plt.legend()
+# plt.grid(True)
+
+# # Add 3D plot as the fourth subplot
+# ax = plt.subplot(2, 2, 4, projection='3d')
+# ax.set_xlim([1525 , 0])
+# ax.set_ylim([0, 2740])
+# ax.set_zlim([0, 1500])
+
+# ax.set_xlabel('x [mm]')
+# ax.set_ylabel('y [mm]')
+# ax.set_zlabel('z [mm]')
+
+# ax.scatter(position_3D[:,0], position_3D[:,1], position_3D[:,2], marker = 'o', alpha=1, color='r', label='Coordinate from triangulation')
+# ax.scatter(prediction_x, prediction_y, prediction_z, marker = 'o', alpha=1, color='b', label='KF prediction and update')
+# ax.scatter(pure_predict_x, pure_predict_y, pure_predict_z, marker = 'o', alpha=1, color='orange', label='KF pure prediction')
+# ax.set_title('3D Trajectory')
+# ax.legend()
+
+# plt.tight_layout()
+# plt.show()
 
 
 
