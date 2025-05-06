@@ -1,7 +1,7 @@
 # Import all functions from the existing file
 from ur3e_movej import *
 
-def ping_pong_pre_move(x, y, z, a, v, t):
+def ping_pong_pre_move(x, y, z, qnear, a, v, t):
     """
     Function to handle pre-move for ping pong robot based on early prediction
     
@@ -32,7 +32,7 @@ def ping_pong_pre_move(x, y, z, a, v, t):
         pre_position = [400, 300, 50, 1.240, 1.168, 1.306]
     
     # Create movement command
-    pre_move_cmd = movej_command(joint_positions = pre_position, a=a, v=v, t=t,)
+    pre_move_cmd = movej_command(pos='pose', x=pre_position, qnear=qnear, a=a, v=v, t=t,)
     
     
     # Connect to the robot (reuse existing connection from ur3e_movej if it exists)
