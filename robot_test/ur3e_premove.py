@@ -17,9 +17,6 @@ def ping_pong_pre_move(x, y, z, a, v, t):
     if z > 40:
         z = 40
     
-    # Define reference configuration for inverse kinematics
-    qnear = [0, -45, 45, -34, -327, 0]
-    
     # Rotation values
     rx = 1.240
     ry = 1.168
@@ -41,15 +38,6 @@ def ping_pong_pre_move(x, y, z, a, v, t):
     # Create movement command
     pre_move_cmd = movej_command(joint_positions = pre_position, a=a, v=v, t=t,)
     
-    # Create the script
-    script = f"""
-def preMovePosition():
-    # Moving to {position_name} pre-position
-    {pre_move_cmd}
-end
-
-preMovePosition()
-"""
     
     # Connect to the robot (reuse existing connection from ur3e_movej if it exists)
     # The imported module doesn't initialize the connection automatically,
@@ -60,7 +48,7 @@ preMovePosition()
     s = init_robot(ROBOT_IP, ROBOT_PORT)
     
     # Send the command
-    send_ur_script(s, script, close_socket=False)
+    send_ur_script(s, pre_move_cmd, close_socket=False)
     
     print(f"Pre-move command sent for {position_name} position")
     print(f"Coordinates: x={x}, y={y}, z={z}")
