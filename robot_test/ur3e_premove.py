@@ -17,23 +17,19 @@ def ping_pong_pre_move(x, y, z, a, v, t):
     if z > 40:
         z = 40
     
-    # Rotation values
-    rx = 1.240
-    ry = 1.168
-    rz = 1.306
     
     # Determine if forehand or backhand based on x coordinate
     if x < 0:
         # Backhand position (left side)
         print("Detected backhand position (x < 0)")
         position_name = "backhand"
+        pre_position = [-400, 300, 50, 1.206, -1.217, -1.187]
+        
     else:
         # Forehand position (right side)
         print("Detected forehand position (x >= 0)")
         position_name = "forehand"
-    
-    # Create the final pre-move position
-    pre_position = [x, y, z, rx, ry, rz]
+        pre_position = [400, 300, 50, 1.240, 1.168, 1.306]
     
     # Create movement command
     pre_move_cmd = movej_command(joint_positions = pre_position, a=a, v=v, t=t,)
@@ -59,9 +55,4 @@ def ping_pong_pre_move(x, y, z, a, v, t):
     return s  # Return the socket connection for later use
 
 if __name__ == "__main__":
-    # Test the function with example coordinates
-    test_x = float(input("Enter test x coordinate (mm): "))
-    test_y = float(input("Enter test y coordinate (mm): "))
-    test_z = float(input("Enter test z coordinate (mm): "))
-    
-    socket = ping_pong_pre_move(test_x, test_y, test_z)
+    pass
