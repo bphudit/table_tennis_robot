@@ -33,10 +33,10 @@ class FrameVisualizer:
         
         return frame
         
-    def display_frames(self, frame1, frame2, process_time_ms=0):
+    def display_frames(self, frame1, frame2, coords1=None, coords2=None, process_time_ms=0):
         """Display two frames with FPS and processing time info in a single window using hstack"""
-        frame1, coords1 = frame1
-        frame2, coords2 = frame2
+
+
         
         # Update FPS
         current_fps = self.update_fps()

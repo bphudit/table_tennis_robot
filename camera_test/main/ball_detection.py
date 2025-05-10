@@ -36,10 +36,10 @@ class BallDetector:
             frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_AREA)
             
         hsv_image = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        blurred_image = cv2.GaussianBlur(hsv_image, (5, 5), 0)
+        blurred_image = cv2.GaussianBlur(hsv_image, (3, 3), 0)
         mask = cv2.inRange(blurred_image, lower_limit, upper_limit)
-        # mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, self.morph_kernel)
-        # mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, self.morph_kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, self.morph_kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, self.morph_kernel)
 
 
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -91,7 +91,7 @@ class BallDetector:
         frame1_processed, coords1 = future1.result()
         frame2_processed, coords2 = future2.result()
         
-        return (frame1_processed, coords1), (frame2_processed, coords2)
+        return frame1_processed, coords1, frame2_processed, coords2
     
     def close(self):
         """

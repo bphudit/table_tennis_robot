@@ -4,7 +4,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 
-def plot_3d(x, y, z, xfit='', yfit=''):
+def plot_3d(x, y, z, prediction_x, prediction_y, prediction_z, pure_prediction_x, pure_prediction_y, pure_prediction_z):
     # Load the STL file
     table_mesh = mesh.Mesh.from_file('src/table_tennis.stl')
     # Extract the faces from the mesh
@@ -28,7 +28,9 @@ def plot_3d(x, y, z, xfit='', yfit=''):
     ax.set_ylim([0, 2740])
     ax.set_zlim([0, 1500])
 
-    ax.scatter(x, y, z, marker = 'o', alpha=1, color='r')
+    ax.scatter(x, y, z, marker = 'o', alpha=1, color='r', label='Coordinate from triangulation')
+    ax.scatter(prediction_x, prediction_y, prediction_z, marker = 'o', alpha=1, color='b', label='KF prediction and update')
+    ax.scatter(pure_prediction_x, pure_prediction_y, pure_prediction_z, marker = 'o', alpha=1, color='orange', label='KF pure prediction')
 
 
     # ax.plot(xfit, yfit, zs=0, color='b', label='2D line (XY)')

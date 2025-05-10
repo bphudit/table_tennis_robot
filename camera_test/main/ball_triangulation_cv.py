@@ -59,7 +59,7 @@ class BallTriangulatorP:
             t = tms
             self.position_3D.append([x, y, z, t])
 
-            print(f"Ball position: [{x:.2f}, {y:.2f}, {z:.2f}] at {t:.3f}")
+            # print(f"Ball position: [{x:.2f}, {y:.2f}, {z:.2f}] at {t:.3f}")
 
             return np.array([x, y, z, t])
         return None

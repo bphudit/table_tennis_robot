@@ -8,7 +8,7 @@ from main.serial_control import SerialController
 
 def main():
     serial_controller = SerialController(port='/dev/cu.usbserial-0001', baudrate=115200)
-    camera_manager = CameraManager(exposure_time=6000, gain=15, mode=0)
+    camera_manager = CameraManager(exposure_time=20000, gain=3, mode=0)
     num = 0
 
     try:
