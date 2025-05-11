@@ -2,7 +2,6 @@ import sys
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.optimize import curve_fit
 from matplotlib.gridspec import GridSpec
 import time
 from mpl_toolkits.mplot3d import Axes3D
