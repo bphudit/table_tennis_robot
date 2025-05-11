@@ -60,7 +60,7 @@ class KalmanFilter:
     def handle_bounce(self):
         # Reverse the vertical velocity with energy loss, and reset the z-position.
         self.x[5] = -self.restitution_coeff * self.x[5]
-        self.x[2] = 0
+        self.x[2] = 20
 
 
 
