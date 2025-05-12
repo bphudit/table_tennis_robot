@@ -11,25 +11,25 @@ from matplotlib import pyplot as plt
 import time
 from plot_3D import plot_3d
 
-data = np.load('/Users/bb/Downloads/data_bounce/data_right11.npz')
+data = np.load('/Users/bb/Downloads/data_bounce/data_right15.npz')
 
-data_file = '/Users/bb/Downloads/data_bounce/data_right11.npz'
-TABLE_BOUNDARIES = {
-        'x_min': 0,
-        'x_max': 1525,
-        'y_min': 0,
-        'y_max': 2740
-    }
+# data_file = '/Users/bb/Downloads/data_bounce/data_right11.npz'
+# TABLE_BOUNDARIES = {
+#         'x_min': 0,
+#         'x_max': 1525,
+#         'y_min': 0,
+#         'y_max': 2740
+#     }
     
-    # Run analysis with table boundaries
-results = analyze_multiple_trajectories(
-    data_file,
-    min_bounce_height=None,  # Auto-determine
-    smoothing_window=3,
-    time_gap_threshold=100,
-    table_boundaries=TABLE_BOUNDARIES,
-    show_table_outline=False  # Just show table outline, not the green surface
-)
+#     # Run analysis with table boundaries
+# results = analyze_multiple_trajectories(
+#     data_file,
+#     min_bounce_height=None,  # Auto-determine
+#     smoothing_window=3,
+#     time_gap_threshold=100,
+#     table_boundaries=TABLE_BOUNDARIES,
+#     show_table_outline=False  # Just show table outline, not the green surface
+# )
 
 
 position_3D = np.array([[pos[1], pos[0], -pos[2], pos[3]] for pos in data['position_3D']])

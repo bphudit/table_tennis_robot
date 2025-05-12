@@ -2,26 +2,27 @@ import sys
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
 from matplotlib.gridspec import GridSpec
 import time
 from mpl_toolkits.mplot3d import Axes3D
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import the necessary classes from the provided code
-# Assuming BounceTrajectoryEvaluator is available from trajectory_evaluator
-# and KalmanFilter is available from kalmanEKF
 from trajectory_evaluator import *
 from src.kalmanEKF import KalmanFilter
 
-def visualize_trajectory_evolution(data_file, table_boundaries=None, step_interval=10, save_plots=False, output_dir=None):
+def visualize_trajectory_evolution_with_midpoint_constraint(data_file, table_boundaries=None, midpoint_y=1370, step_interval=10, save_plots=False, output_dir=None):
     """
     Visualize how the Kalman filter predictions evolve as more data points are added,
-    comparing with the ground truth trajectory at each step.
+    comparing with the ground truth trajectory at each step, with a constraint that
+    we only consider stopping points before the ball crosses the table midpoint.
     
     Args:
         data_file: Path to the .npz file with trajectory data
         table_boundaries: Dictionary with table boundaries {x_min, x_max, y_min, y_max}
-        step_interval: How many steps to skip between visualizations (smaller = more plots)
+        midpoint_y: Y-coordinate of the table midpoint (default: 1370mm)
+        step_interval: How many steps to skip between visualizations
         save_plots: Whether to save plots instead of showing them
         output_dir: Directory to save plots if save_plots is True
         
@@ -31,6 +32,9 @@ def visualize_trajectory_evolution(data_file, table_boundaries=None, step_interv
     # Create output directory if saving plots
     if save_plots and output_dir:
         os.makedirs(output_dir, exist_ok=True)
+    
+    # Get just the filename without path for display
+    file_basename = os.path.basename(data_file)
     
     # Load data
     data = np.load(data_file)
@@ -77,6 +81,19 @@ def visualize_trajectory_evolution(data_file, table_boundaries=None, step_interv
         measurements.append((position_3D_processed[i][0], position_3D_processed[i][1], position_3D_processed[i][2]))
     
     measurements = np.array(measurements)
+    
+    # Find the indices where the ball is before the midpoint
+    before_midpoint_indices = np.where(position_3D_processed[:, 1] < midpoint_y)[0]
+    
+    # If no points are before midpoint, issue a warning and use all points
+    if len(before_midpoint_indices) == 0:
+        print("Warning: No points found before the midpoint. Using all points.")
+        max_data_index = len(measurements)
+    else:
+        max_data_index = np.max(before_midpoint_indices)
+        if max_data_index >= len(measurements):
+            max_data_index = len(measurements) - 1
+        print(f"Analysis will only consider points before midpoint (up to index {max_data_index})")
     
     # Initial state for Kalman filter
     initial_state = [[position_3D_processed[0][0]], 
@@ -143,7 +160,7 @@ def visualize_trajectory_evolution(data_file, table_boundaries=None, step_interv
             initial_state=[[kf_state['x'][0][0]], [kf_state['x'][1][0]], [kf_state['x'][2][0]], 
                          [kf_state['x'][3][0]], [kf_state['x'][4][0]], [kf_state['x'][5][0]]],
             initial_covariance=kf_state['P'],
-            restitution_coeff=0.9, 
+            restitution_coeff=0.935, 
             drag_coeff=0.5
         )
         
@@ -211,6 +228,11 @@ def visualize_trajectory_evolution(data_file, table_boundaries=None, step_interv
     
     print(f"Creating visualizations at every {step_interval} steps...")
     for i in range(len(measurements)):
+        # Break if we've gone past the midpoint constraint
+        if i > max_data_index:
+            print(f"Stopping at step {i} as ball has crossed the midpoint")
+            break
+            
         # Predict next state
         kf.predict(dt_ls[i])
         
@@ -270,12 +292,13 @@ def visualize_trajectory_evolution(data_file, table_boundaries=None, step_interv
         
         mse_evolution.append({
             'step': i+1,
-            'mse': mse_total
+            'mse': mse_total,
+            'y_position': position_3D_processed[i+1][1]  # Y-position at this step
         })
         
         # Visualize at specified intervals
-        if (i+1) % step_interval == 0 or i == len(measurements) - 1:
-            print(f"Creating visualization for step {i+1}/{len(measurements)}")
+        if (i+1) % step_interval == 0 or i == len(measurements) - 1 or i == max_data_index:
+            print(f"Creating visualization for step {i+1}/{min(len(measurements), max_data_index+1)}")
             
             # Create figure
             fig = plt.figure(figsize=(15, 10))
@@ -311,9 +334,9 @@ def visualize_trajectory_evolution(data_file, table_boundaries=None, step_interv
             ax.set_xlabel('X [mm]')
             ax.set_ylabel('Y [mm]')
             ax.set_zlabel('Z [mm]')
-            ax.set_title(f'3D Trajectory Evolution (Step {i+1})')
+            ax.set_title(f'3D Trajectory - {file_basename} (Step {i+1})')
             
-            # Add table boundaries if provided
+            # Add table boundaries and midpoint if provided
             if table_boundaries:
                 x_min, x_max = table_boundaries['x_min'], table_boundaries['x_max']
                 y_min, y_max = table_boundaries['y_min'], table_boundaries['y_max']
@@ -324,6 +347,10 @@ def visualize_trajectory_evolution(data_file, table_boundaries=None, step_interv
                         [y_min, y_min, y_max, y_max, y_min],
                         [z_table, z_table, z_table, z_table, z_table],
                         'k-', linewidth=1.0, alpha=0.5)
+                
+                # Add midpoint line
+                ax.plot([x_min, x_max], [midpoint_y, midpoint_y], [z_table, z_table], 
+                       'r--', linewidth=2.0, alpha=0.7, label='Table Midpoint')
             
             # Set axis limits based on table boundaries or data
             if table_boundaries:
@@ -359,17 +386,23 @@ def visualize_trajectory_evolution(data_file, table_boundaries=None, step_interv
             for segment in ground_truth_segments:
                 ax.plot(segment[:,1], segment[:,2], 'g-', linewidth=2)
             
-            # Set labels and title
-            ax.set_xlabel('X [mm]')
-            ax.set_ylabel('Y [mm]')
-            ax.set_title(f'XY Projection (Step {i+1})')
-            
-            # Add table boundaries
+            # Add midpoint line
             if table_boundaries:
+                # Add table outline
                 ax.plot([x_min, x_max, x_max, x_min, x_min],
                         [y_min, y_min, y_max, y_max, y_min],
                         'k-', linewidth=1.0, alpha=0.5)
                 
+                # Add midpoint line
+                ax.axhline(y=midpoint_y, color='r', linestyle='--', 
+                          linewidth=2.0, alpha=0.7, label='Table Midpoint')
+            
+            # Set labels and title
+            ax.set_xlabel('X [mm]')
+            ax.set_ylabel('Y [mm]')
+            ax.set_title(f'XY Projection - {file_basename} (Step {i+1})')
+            
+            if table_boundaries:
                 ax.set_xlim([0, table_boundaries['x_max']])
                 ax.set_ylim([0, table_boundaries['y_max']])
             
@@ -392,14 +425,14 @@ def visualize_trajectory_evolution(data_file, table_boundaries=None, step_interv
                 ax.plot(valid_steps, valid_mse, 'b-o')
                 ax.axvline(x=i+1, color='r', linestyle='--')
                 
-                # Find minimum MSE
-                min_idx = np.argmin(valid_mse) if valid_mse else 0
-                if valid_steps:
+                # Find minimum MSE among valid values
+                if valid_mse:
+                    min_idx = np.argmin(valid_mse)
                     ax.axvline(x=valid_steps[min_idx], color='g', linestyle='--')
                     
                     # Add annotation for current and min MSE
                     current_mse_val = mse_values[i]
-                    # Fixed: Check if current_mse is numeric before using isinf
+                    # Check if current_mse is numeric before using isinf
                     if isinstance(current_mse_val, (int, float)) and not np.isinf(current_mse_val):
                         ax.annotate(f"Current MSE: {current_mse_val:.2f}", 
                                    xy=(i+1, current_mse_val),
@@ -407,7 +440,7 @@ def visualize_trajectory_evolution(data_file, table_boundaries=None, step_interv
                                    arrowprops=dict(facecolor='red', shrink=0.05))
                     
                     min_mse = valid_mse[min_idx]
-                    ax.annotate(f"Min MSE: {min_mse:.2f}", 
+                    ax.annotate(f"Min MSE: {min_mse:.2f} at step {valid_steps[min_idx]}", 
                                xy=(valid_steps[min_idx], min_mse),
                                xytext=(valid_steps[min_idx]+5, min_mse),
                                arrowprops=dict(facecolor='green', shrink=0.05))
@@ -437,7 +470,7 @@ def visualize_trajectory_evolution(data_file, table_boundaries=None, step_interv
             # Set labels and title
             ax.set_xlabel('X [mm]')
             ax.set_ylabel('Z [mm]')
-            ax.set_title(f'XZ Projection (Step {i+1})')
+            ax.set_title(f'XZ Projection - {file_basename} (Step {i+1})')
             
             # Add table boundaries (just the edge in XZ view)
             if table_boundaries:
@@ -458,21 +491,24 @@ def visualize_trajectory_evolution(data_file, table_boundaries=None, step_interv
             else:
                 plt.show()
     
-    # Find the optimal stopping point (minimum MSE)
+    # Find the optimal stopping point (minimum MSE) among points before midpoint
     valid_mse = [res['mse'] for res in mse_evolution if not np.isinf(res['mse'])]
     valid_steps = [res['step'] for res in mse_evolution if not np.isinf(res['mse'])]
+    valid_y_positions = [res['y_position'] for res in mse_evolution if not np.isinf(res['mse'])]
     
     if valid_mse:
         best_idx = np.argmin(valid_mse)
         best_step = valid_steps[best_idx]
         best_mse = valid_mse[best_idx]
+        best_y = valid_y_positions[best_idx]
         
         print(f"\nOptimal stopping point found at step {best_step}")
+        print(f"Y-position at optimal stopping: {best_y:.2f}mm")
         print(f"Minimum MSE: {best_mse:.2f}")
         
-        # Calculate as percentage of total trajectory
-        percentage = (best_step / len(measurements)) * 100
-        print(f"This is {percentage:.1f}% of the total trajectory")
+        # Calculate as percentage of midpoint
+        percentage_of_midpoint = (best_y / midpoint_y) * 100
+        print(f"This is {percentage_of_midpoint:.1f}% of the distance to the table midpoint")
         
         # Create final summary visualization
         fig = plt.figure(figsize=(15, 10))
@@ -481,7 +517,9 @@ def visualize_trajectory_evolution(data_file, table_boundaries=None, step_interv
         ax = fig.add_subplot(2, 2, 1, projection='3d')
         
         # All raw points
-        ax.scatter(position_3D_processed[:,0], position_3D_processed[:,1], position_3D_processed[:,2], 
+        ax.scatter(position_3D_processed[:max_data_index+1, 0], 
+                  position_3D_processed[:max_data_index+1, 1], 
+                  position_3D_processed[:max_data_index+1, 2], 
                   c='red', s=20, alpha=0.3, label='All Points')
         
         # Mark the optimal stopping point
@@ -497,7 +535,7 @@ def visualize_trajectory_evolution(data_file, table_boundaries=None, step_interv
         ax.scatter([], [], [], c='green', s=30, label='Ground Truth')
         
         # Set title and labels
-        ax.set_title(f'Optimal Stopping Point (Step {best_step}, MSE: {best_mse:.2f})')
+        ax.set_title(f'Optimal Stopping Point - {file_basename} (Step {best_step}, MSE: {best_mse:.2f})')
         ax.set_xlabel('X [mm]')
         ax.set_ylabel('Y [mm]')
         ax.set_zlabel('Z [mm]')
@@ -518,6 +556,10 @@ def visualize_trajectory_evolution(data_file, table_boundaries=None, step_interv
                     [z_table, z_table, z_table, z_table, z_table],
                     'k-', linewidth=1.0, alpha=0.5)
             
+            # Add midpoint line
+            ax.plot([x_min, x_max], [midpoint_y, midpoint_y], [z_table, z_table], 
+                   'r--', linewidth=2.0, alpha=0.7, label='Table Midpoint')
+            
         ax.legend()
         
         # Plot MSE evolution
@@ -535,31 +577,33 @@ def visualize_trajectory_evolution(data_file, table_boundaries=None, step_interv
         
         ax.set_xlabel('Step')
         ax.set_ylabel('MSE')
-        ax.set_title('MSE Evolution')
+        ax.set_title(f'MSE Evolution - {file_basename}')
         ax.grid(True)
         
-        # Add histogram of MSE values
+        # Plot Y position vs MSE
         ax = fig.add_subplot(2, 2, 3)
-        ax.hist(valid_mse, bins=20)
-        ax.axvline(x=best_mse, color='r', linestyle='--')
-        ax.set_xlabel('MSE')
-        ax.set_ylabel('Frequency')
-        ax.set_title('MSE Distribution')
+        
+        ax.plot(valid_y_positions, valid_mse, 'b-o', alpha=0.5)
+        ax.scatter(best_y, best_mse, c='red', s=100, marker='*')
+        ax.axvline(x=midpoint_y, color='r', linestyle='--', alpha=0.7, label='Table Midpoint')
+        
+        ax.set_xlabel('Y Position [mm]')
+        ax.set_ylabel('MSE')
+        ax.set_title(f'MSE vs Y Position - {file_basename}')
         ax.grid(True)
+        ax.legend()
         
         # Add percentage visualization
         ax = fig.add_subplot(2, 2, 4)
         
         # Create bar showing percentage of trajectory
-        bars = ax.bar(['Before optimal', 'After optimal'], 
-                     [percentage, 100-percentage],
-                     color=['green', 'lightgray'])
+        bars = ax.bar(['Percentage of Midpoint'], [percentage_of_midpoint], color='green')
         
         # Add percentage labels on bars
-        ax.bar_label(bars, [f"{percentage:.1f}%", f"{100-percentage:.1f}%"], label_type='center')
+        ax.bar_label(bars, [f"{percentage_of_midpoint:.1f}%"], label_type='center')
         
         ax.set_ylim([0, 100])
-        ax.set_title('Trajectory Percentage')
+        ax.set_title(f'Percentage of Distance to Midpoint - {file_basename}')
         
         plt.tight_layout()
         
@@ -574,21 +618,23 @@ def visualize_trajectory_evolution(data_file, table_boundaries=None, step_interv
         return {
             'best_step': best_step,
             'best_mse': best_mse,
-            'percentage': percentage,
+            'best_y_position': best_y,
+            'percentage_of_midpoint': percentage_of_midpoint,
             'mse_evolution': mse_evolution
         }
     else:
         print("No valid MSE values found. Check your data and model parameters.")
         return None
 
-# Function to analyze multiple trajectories
-def analyze_multiple_trajectories(data_files, table_boundaries=None, save_plots=False, output_dir=None):
+def analyze_multiple_trajectories_with_midpoint(data_files, table_boundaries=None, midpoint_y=1370, save_plots=False, output_dir=None):
     """
-    Analyze multiple trajectories to find the average optimal stopping point
+    Analyze multiple trajectories to find patterns in optimal stopping points
+    with the midpoint constraint.
     
     Args:
         data_files: List of paths to .npz files with trajectory data
         table_boundaries: Dictionary with table boundaries {x_min, x_max, y_min, y_max}
+        midpoint_y: Y-coordinate of the table midpoint
         save_plots: Whether to save plots instead of showing them
         output_dir: Directory to save plots if save_plots is True
         
@@ -607,10 +653,14 @@ def analyze_multiple_trajectories(data_files, table_boundaries=None, save_plots=
         else:
             traj_dir = None
         
+        # Get just the filename without path for display
+        file_basename = os.path.basename(data_file)
+        
         # Run visualization with minimal output (only final plot)
-        result = visualize_trajectory_evolution(
+        result = visualize_trajectory_evolution_with_midpoint_constraint(
             data_file,
             table_boundaries=table_boundaries,
+            midpoint_y=midpoint_y,
             step_interval=999999,  # Only show final visualization
             save_plots=save_plots,
             output_dir=traj_dir
@@ -621,14 +671,16 @@ def analyze_multiple_trajectories(data_files, table_boundaries=None, save_plots=
                 'file': data_file,
                 'best_step': result['best_step'],
                 'best_mse': result['best_mse'],
-                'percentage': result['percentage']
+                'best_y_position': result['best_y_position'],
+                'percentage_of_midpoint': result['percentage_of_midpoint']
             })
     
     # Calculate statistics
     if results:
         step_values = [res['best_step'] for res in results]
         mse_values = [res['best_mse'] for res in results]
-        percentage_values = [res['percentage'] for res in results]
+        y_position_values = [res['best_y_position'] for res in results]
+        percentage_values = [res['percentage_of_midpoint'] for res in results]
         
         avg_step = np.mean(step_values)
         std_step = np.std(step_values)
@@ -636,51 +688,80 @@ def analyze_multiple_trajectories(data_files, table_boundaries=None, save_plots=
         avg_percentage = np.mean(percentage_values)
         std_percentage = np.std(percentage_values)
         
+        avg_y = np.mean(y_position_values)
+        std_y = np.std(y_position_values)
+        
         print("\nSummary of all trajectories:")
         print(f"Average optimal stopping step: {avg_step:.2f} ± {std_step:.2f}")
-        print(f"Average optimal stopping percentage: {avg_percentage:.2f}% ± {std_percentage:.2f}%")
+        print(f"Average Y-position at optimal stopping: {avg_y:.2f}mm ± {std_y:.2f}mm")
+        print(f"Average percentage of midpoint traversed: {avg_percentage:.2f}% ± {std_percentage:.2f}%")
         
         # Create summary visualization
-        fig = plt.figure(figsize=(15, 10))
+        plt.figure(figsize=(15, 10))
+        plt.suptitle(f'Summary of {len(data_files)} Trajectories', fontsize=16)
         
         # Plot percentage distribution
-        ax = fig.add_subplot(2, 2, 1)
-        ax.hist(percentage_values, bins=10)
-        ax.axvline(x=avg_percentage, color='r', linestyle='--')
-        ax.set_xlabel('Optimal Stopping Percentage')
-        ax.set_ylabel('Frequency')
-        ax.set_title('Stopping Percentage Distribution')
-        ax.grid(True)
+        plt.subplot(2, 2, 1)
+        plt.hist(percentage_values, bins=10)
+        plt.axvline(x=avg_percentage, color='r', linestyle='--')
+        plt.text(avg_percentage + 2, plt.ylim()[1]*0.9, f"Mean: {avg_percentage:.1f}%")
+        plt.xlabel('Percentage of Midpoint Traversed')
+        plt.ylabel('Frequency')
+        plt.title('Distribution of Optimal Stopping Percentages')
+        plt.grid(True)
         
         # Plot MSE distribution
-        ax = fig.add_subplot(2, 2, 2)
-        ax.hist(mse_values, bins=10)
-        ax.set_xlabel('Minimum MSE')
-        ax.set_ylabel('Frequency')
-        ax.set_title('MSE Distribution')
-        ax.grid(True)
+        plt.subplot(2, 2, 2)
+        plt.hist(mse_values, bins=10)
+        plt.xlabel('Minimum MSE')
+        plt.ylabel('Frequency')
+        plt.title('Distribution of MSE Values')
+        plt.grid(True)
         
-        # Plot step distribution
-        ax = fig.add_subplot(2, 2, 3)
-        ax.hist(step_values, bins=10)
-        ax.axvline(x=avg_step, color='r', linestyle='--')
-        ax.set_xlabel('Optimal Stopping Step')
-        ax.set_ylabel('Frequency')
-        ax.set_title('Stopping Step Distribution')
-        ax.grid(True)
-        
-        # Plot scatter of MSE vs percentage
-        ax = fig.add_subplot(2, 2, 4)
-        ax.scatter(percentage_values, mse_values, c='blue', s=50, alpha=0.7)
+        # Plot y position vs MSE
+        plt.subplot(2, 2, 3)
+        plt.scatter(y_position_values, mse_values, c='blue', s=50, alpha=0.7)
         
         # Label each point with trajectory number
-        for j, (pct, mse) in enumerate(zip(percentage_values, mse_values)):
-            ax.annotate(f"{j+1}", (pct, mse), xytext=(5, 5), textcoords='offset points')
+        for j, (y_pos, mse) in enumerate(zip(y_position_values, mse_values)):
+            plt.annotate(f"{j+1}", (y_pos, mse), xytext=(5, 5), textcoords='offset points')
         
-        ax.set_xlabel('Optimal Stopping Percentage')
-        ax.set_ylabel('Minimum MSE')
-        ax.set_title('MSE vs Stopping Percentage')
-        ax.grid(True)
+        plt.axvline(x=midpoint_y, color='r', linestyle='--', label='Table Midpoint')
+        plt.xlabel('Y Position at Stopping Point [mm]')
+        plt.ylabel('MSE')
+        plt.title('MSE vs Y Position')
+        plt.grid(True)
+        plt.legend()
+        
+        # Create recommendation visualization
+        plt.subplot(2, 2, 4)
+        
+        # Calculate bounds (mean ± standard deviation)
+        lower_bound = max(0, avg_percentage - std_percentage)
+        upper_bound = min(100, avg_percentage + std_percentage)
+        
+        # Create a bar chart with recommendation
+        bars = plt.bar(['Minimum', 'Average', 'Maximum'], 
+                      [lower_bound, avg_percentage, upper_bound],
+                      color=['#FAA0A0', '#66CC66', '#FAA0A0'],
+                      alpha=0.7)
+        
+        # Add percentage labels on bars
+        plt.bar_label(bars, [f"{lower_bound:.1f}%", f"{avg_percentage:.1f}%", f"{upper_bound:.1f}%"], 
+                     label_type='center')
+        
+        # Add Y-position values
+        y_min = (lower_bound / 100) * midpoint_y
+        y_avg = (avg_percentage / 100) * midpoint_y
+        y_max = (upper_bound / 100) * midpoint_y
+        
+        plt.text(0, lower_bound+5, f"{y_min:.0f}mm", ha='center')
+        plt.text(1, avg_percentage+5, f"{y_avg:.0f}mm", ha='center')
+        plt.text(2, upper_bound+5, f"{y_max:.0f}mm", ha='center')
+        
+        plt.ylabel('Percentage of Midpoint Traversed')
+        plt.title('Recommended Stopping Range')
+        plt.ylim([0, 110])  # Leave room for labels
         
         plt.tight_layout()
         
@@ -690,15 +771,22 @@ def analyze_multiple_trajectories(data_files, table_boundaries=None, save_plots=
         else:
             plt.show()
         
+        # Print final recommendation
+        print("\n=== FINAL RECOMMENDATION ===")
+        print(f"Stop feeding data to Kalman filter when the ball has traversed")
+        print(f"{avg_percentage:.1f}% ± {std_percentage:.1f}% of the distance to table midpoint")
+        print(f"This corresponds to Y ≈ {avg_y:.0f}mm ± {std_y:.0f}mm")
+        
         return {
             'results': results,
             'avg_step': avg_step,
             'std_step': std_step,
+            'avg_y_position': avg_y,
+            'std_y_position': std_y,
             'avg_percentage': avg_percentage,
             'std_percentage': std_percentage,
-            'step_values': step_values,
-            'percentage_values': percentage_values,
-            'mse_values': mse_values
+            'all_percentage_values': percentage_values,
+            'all_mse_values': mse_values
         }
     else:
         print("No valid results found.")
@@ -714,21 +802,25 @@ if __name__ == "__main__":
         'y_max': 2740
     }
     
+    # Define table midpoint
+    MIDPOINT_Y = 950  # Half of the table length (2740mm / 2)
+    
     # Get start time
     start_time = time.time()
     
     # Choose analysis mode
-    analysis_mode = "single"  # Options: "single", "multiple"
+    analysis_mode = "multiple"  # Options: "single", "multiple"
     
     if analysis_mode == "single":
         # Process a single trajectory
-        data_file = '/Users/bb/Downloads/data_bounce/data_right11.npz'
+        data_file = '/Users/bb/Downloads/data_bounce/data_right15.npz'
         output_dir = 'trajectory_evolution_plots'
         
         # Create visualizations at intervals
-        result = visualize_trajectory_evolution(
+        result = visualize_trajectory_evolution_with_midpoint_constraint(
             data_file, 
             table_boundaries=TABLE_BOUNDARIES,
+            midpoint_y=MIDPOINT_Y,
             step_interval=10,  # Create a visualization every 10 steps
             save_plots=False,  # Set to True to save plots to disk
             output_dir=output_dir
@@ -736,12 +828,13 @@ if __name__ == "__main__":
     
     elif analysis_mode == "multiple":
         # Analyze multiple trajectories
-        data_files = [f'/Users/bb/Downloads/data_bounce/data_right{i}.npz' for i in range(1, 21)]
+        data_files = [f'/Users/bb/Downloads/data_bounce/data_left{i}.npz' for i in range(1, 16)]
         output_dir = 'trajectory_analysis'
         
-        results = analyze_multiple_trajectories(
+        results = analyze_multiple_trajectories_with_midpoint(
             data_files,
             table_boundaries=TABLE_BOUNDARIES,
+            midpoint_y=MIDPOINT_Y,
             save_plots=False,
             output_dir=output_dir
         )

@@ -805,7 +805,7 @@ if __name__ == "__main__":
     }
     
     # Load data
-    data_file = '/Users/bb/Downloads/data_bounce/data_right11.npz'
+    data_file = '/Users/bb/Downloads/data_bounce/data_right15.npz'
     
     # Run analysis with table boundaries
     results = analyze_multiple_trajectories(
@@ -814,5 +814,5 @@ if __name__ == "__main__":
         smoothing_window=3,
         time_gap_threshold=100,
         table_boundaries=TABLE_BOUNDARIES,
-        show_table_outline=True  # Just show table outline, not the green surface
+        show_table_outline=False  # Just show table outline, not the green surface
     )
